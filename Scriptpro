@@ -33,20 +33,26 @@ Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
 end)
 
 -- =========================================================
--- Network
+-- Network (robust WaitForChild)
 -- =========================================================
 local RemoteEvent
 do
-    local mods = ReplicatedStorage:WaitForChild("Modules", 10)
-    local net1 = mods and mods:WaitForChild("Network", 10)
-    local net2 = net1 and net1:WaitForChild("Network", 10)
-    RemoteEvent = net2 and net2:WaitForChild("RemoteEvent", 10)
+    local mods = ReplicatedStorage:FindFirstChild("Modules")
+    local net1 = mods and mods:FindFirstChild("Network")
+    local net2 = net1 and net1:FindFirstChild("Network")
+    RemoteEvent = net2 and net2:FindFirstChild("RemoteEvent")
     if not RemoteEvent then warn("[viltrumite] RemoteEvent not found") end
 end
 
-local PlayersFolder   = workspace:WaitForChild("Players", 8)
-local KillersFolder   = PlayersFolder and PlayersFolder:WaitForChild("Killers", 8)
-local SurvivorsFolder = PlayersFolder and PlayersFolder:WaitForChild("Survivors", 8)
+local PlayersFolder, KillersFolder, SurvivorsFolder
+do
+    local ok, res = pcall(function() return workspace:WaitForChild("Players", 8) end)
+    PlayersFolder = (ok and res) or workspace:FindFirstChild("Players")
+    if PlayersFolder then
+        KillersFolder   = PlayersFolder:FindFirstChild("Killers")
+        SurvivorsFolder = PlayersFolder:FindFirstChild("Survivors")
+    end
+end
 
 local function buildBuffer(str)
     local bytes = { 3, #str, 0, 0, 0 }
@@ -139,7 +145,7 @@ local function fireBlock(triggerKiller)
 end
 
 -- =========================================================
--- Detection Box (real Part + optional flash behind killer on block)
+-- Detection Box
 -- =========================================================
 FacingVisual = {
     VisualEnabled = false,
@@ -247,7 +253,6 @@ local function isClientInRealBox(killerRoot)
     return #workspace:GetPartsInPart(data.part, OVERLAP) > 0
 end
 
--- Block flash — temporary box behind killer on block fire
 local function removeFlash(killer)
     local f = FacingVisual.flashes[killer]
     if not f then return end
@@ -525,8 +530,17 @@ local function startDrag(targetPart)
     local myId = HDT._dragId
     if HDT._conn then HDT._conn:Disconnect() HDT._conn = nil end
     HDT._dragging = true
-    local saved = { walk = hum.WalkSpeed, jump = hum.JumpPower, auto = hum.AutoRotate }
-    hum.WalkSpeed = 0; hum.JumpPower = 0; hum.AutoRotate = false
+    -- Save and zero both JumpPower and JumpHeight so modern humanoids can't escape.
+    local saved = {
+        walk = hum.WalkSpeed,
+        jumpPower = hum.JumpPower,
+        jumpHeight = hum.JumpHeight,
+        auto = hum.AutoRotate,
+    }
+    hum.WalkSpeed = 0
+    pcall(function() hum.JumpPower = 0 end)
+    pcall(function() hum.JumpHeight = 0 end)
+    hum.AutoRotate = false
     local finished = false
     local function cleanup()
         if finished then return end
@@ -541,7 +555,10 @@ local function startDrag(targetPart)
         end
         if hum and hum.Parent then
             pcall(function()
-                hum.WalkSpeed = saved.walk; hum.JumpPower = saved.jump; hum.AutoRotate = saved.auto
+                hum.WalkSpeed = saved.walk
+                hum.JumpPower = saved.jumpPower
+                hum.JumpHeight = saved.jumpHeight
+                hum.AutoRotate = saved.auto
             end)
         end
     end
@@ -846,22 +863,23 @@ RunService:BindToRenderStep("ViltrumiteAim", Enum.RenderPriority.Camera.Value + 
 end)
 
 -- =========================================================
--- SILENT AIM — hooks GetMousePos for Dusekkar + Jane Doe
+-- SILENT AIM — fixed (requires module, falls back across hook APIs)
 -- =========================================================
 SilentAim = {
-    Enabled       = false,
-    Dusekkar      = false,
-    JaneDoe       = false,
-    Prediction    = 0.15,
-    WallCheck     = true,
-    MaxRange      = 300,
+    Enabled            = false,
+    Dusekkar           = false,
+    JaneDoe            = false,
+    Prediction         = 0.15,
+    WallCheck          = true,
+    MaxRange           = 300,
+    _installed         = false,
     _hookedGetMousePos = false,
-    _originalGetMousePos = nil,
-    _lastHookCheck = 0,
-    _status = "idle",
+    _original          = nil,
+    _hookRef           = nil,
+    _hookApi           = nil,
+    _status            = "idle",
 }
 
--- smoothed velocity per target for prediction
 local saVelCache = setmetatable({}, { __mode = "k" })
 local function saSmoothVel(hrp)
     if not hrp then return Vector3.zero end
@@ -881,10 +899,9 @@ end
 
 local function saPredictTargetPos(hrp)
     if not hrp then return nil end
-    local base = hrp.Position
     local v = saSmoothVel(hrp)
     local lead = (SilentAim.Prediction or 0.15) + (getPing() * 0.5)
-    return base + v * math.clamp(lead, 0, 0.75)
+    return hrp.Position + v * math.clamp(lead, 0, 0.75)
 end
 
 local function saGetNearestKillerHRP()
@@ -899,9 +916,8 @@ local function saGetNearestKillerHRP()
                 local d = (hrp.Position - myRoot.Position).Magnitude
                 if d <= bestDist then
                     if SilentAim.WallCheck then
-                        local myChar = lp.Character
+                        RAY_LOS.FilterDescendantsInstances = { lp.Character, k }
                         local delta = hrp.Position - myRoot.Position
-                        RAY_LOS.FilterDescendantsInstances = { myChar, k }
                         if not workspace:Raycast(myRoot.Position, delta, RAY_LOS) then
                             best, bestDist = hrp, d
                         end
@@ -915,135 +931,137 @@ local function saGetNearestKillerHRP()
     return best
 end
 
-local function saIsChargingAbility(abilityName)
-    -- check if the ability is currently charging via the UI ChargeBar or state
-    local ok, assets = pcall(function()
-        return ReplicatedStorage:FindFirstChild("Assets")
-    end)
-    if not ok or not assets then return false end
-
-    -- check for UI-based charge indicator
-    local pg = lp:FindFirstChild("PlayerGui")
-    if not pg then return false end
-    local mainUI = pg:FindFirstChild("MainUI")
-    local container = mainUI and mainUI:FindFirstChild("AbilityContainer")
-    if not container then return false end
-    local btn = container:FindFirstChild(abilityName)
-    if not btn then return false end
-    local chargeBar = btn:FindFirstChild("ChargeBar") or btn:FindFirstChild("Charge")
-    if chargeBar then
-        -- visible charge bar means actively aiming
-        if chargeBar.Visible ~= false and chargeBar.AbsoluteSize.X > 0 then
-            return true
-        end
-    end
-    return false
-end
-
-local function saCurrentCharName()
-    local c = lp.Character
-    if not c then return nil end
-    return c:GetAttribute("CharacterName") or c.Name
-end
-
-local function saShouldHook()
-    local name = saCurrentCharName()
-    if not name then return false end
-    if name == "Dusekkar" and SilentAim.Dusekkar then return true end
-    if name == "JaneDoe" and SilentAim.JaneDoe then return true end
-    return false
+-- Normalize character name so "JaneDoe" and "Jane Doe" both match.
+local function saNormalizeName(s)
+    if not s then return nil end
+    return (string.gsub(string.lower(tostring(s)), "%s+", ""))
 end
 
 local function saResolveTarget()
-    local name = saCurrentCharName()
+    if not SilentAim.Enabled then return nil end
+    local c = lp.Character
+    if not c then return nil end
+    local name = saNormalizeName(c:GetAttribute("CharacterName") or c.Name)
     if not name then return nil end
-
-    -- Determine if the relevant ability is active
-    if name == "Dusekkar" then
+    if name == "dusekkar" then
         if not SilentAim.Dusekkar then return nil end
-        -- PlasmaBeam is a fast projectile; redirect only while charging
-        if not saIsChargingAbility("PlasmaBeam") and not saIsChargingAbility("SpawnProtection") then
-            -- fallback: always redirect if enabled (safer than no redirect)
-        end
-    elseif name == "JaneDoe" then
+    elseif name == "janedoe" then
         if not SilentAim.JaneDoe then return nil end
     else
         return nil
     end
-
     local hrp = saGetNearestKillerHRP()
     if not hrp then return nil end
     return saPredictTargetPos(hrp)
 end
 
+local function saHookApi()
+    if SilentAim._hookApi then return SilentAim._hookApi end
+    local cands = {
+        rawget(_G, "hookfunction"),
+        rawget(_G, "replacefunc"),
+        rawget(_G, "hookfunc"),
+        rawget(_G, "replaceFunction"),
+    }
+    for _, fn in ipairs(cands) do
+        if type(fn) == "function" then
+            SilentAim._hookApi = fn
+            return fn
+        end
+    end
+    return nil
+end
+
+local function saFindGetMousePos()
+    local keys = { "GetMousePos", "GetMousePosition", "GetPosition", "Get" }
+    local function tryModule(node)
+        if not node or not node:IsA("ModuleScript") then return nil end
+        local ok, mod = pcall(require, node)
+        if not ok then return nil end
+        if type(mod) == "function" then return mod end
+        if type(mod) == "table" then
+            for _, k in ipairs(keys) do
+                if type(mod[k]) == "function" then return mod[k] end
+            end
+        end
+        return nil
+    end
+    local paths = {
+        { "Systems", "Player", "Miscellaneous", "GetPlayerMousePosition" },
+        { "Systems", "Player", "Miscellaneous", "GetMousePosition" },
+        { "Systems", "Player", "Miscellaneous", "GetMousePos" },
+        { "Systems", "Player", "GetPlayerMousePosition" },
+        { "Systems", "Player", "GetMousePosition" },
+    }
+    for _, path in ipairs(paths) do
+        local node, ok = ReplicatedStorage, true
+        for _, seg in ipairs(path) do
+            node = node and node:FindFirstChild(seg)
+            if not node then ok = false; break end
+        end
+        if ok and node then
+            local fn = tryModule(node)
+            if fn then return fn end
+        end
+    end
+    for _, d in ipairs(ReplicatedStorage:GetDescendants()) do
+        if d:IsA("ModuleScript") then
+            local n = string.lower(d.Name)
+            if n:find("getplayermouseposition", 1, true)
+               or n:find("getmouseposition", 1, true)
+               or n:find("getmousepos", 1, true) then
+                local fn = tryModule(d)
+                if fn then return fn end
+            end
+        end
+    end
+    return nil
+end
+
 local function saInstallHook()
-    if SilentAim._hookedGetMousePos then return true end
-    if type(hookfunction) ~= "function" then
-        SilentAim._status = "hookfunction unavailable"
+    if SilentAim._installed then return true end
+    local hookFn = saHookApi()
+    if type(hookFn) ~= "function" then
+        SilentAim._status = "hook API unavailable"
         return false
     end
-
-    local ok, getMousePosFn = pcall(function()
-        local mod = ReplicatedStorage.Systems.Player.Miscellaneous.GetPlayerMousePosition
-        return mod and mod.GetMousePos
-    end)
-    if not ok or type(getMousePosFn) ~= "function" then
+    local original = saFindGetMousePos()
+    if type(original) ~= "function" then
         SilentAim._status = "GetMousePos module not found"
         return false
     end
-
-    SilentAim._originalGetMousePos = getMousePosFn
-
-    local function hooked(...)
+    local function detour(...)
         local target = saResolveTarget()
         if target then
-            SilentAim._status = "redirecting to killer"
+            SilentAim._status = "redirecting"
             return target
         end
-        SilentAim._status = "passing through"
-        if type(SilentAim._originalGetMousePos) == "function" then
-            return SilentAim._originalGetMousePos(...)
-        end
-        return lp:GetMouse().Hit.Position
+        SilentAim._status = "passthrough"
+        return original(...)
     end
-
-    local ok2 = pcall(function()
-        hookfunction(getMousePosFn, hooked)
-    end)
-    if not ok2 then
-        SilentAim._status = "hook failed"
+    local ok, ret = pcall(hookFn, original, detour)
+    if not ok then
+        SilentAim._status = "hook failed: " .. tostring(ret)
         return false
     end
-
+    SilentAim._original          = ret or original
+    SilentAim._hookRef           = detour
+    SilentAim._installed         = true
     SilentAim._hookedGetMousePos = true
-    SilentAim._status = "hook installed"
+    SilentAim._status            = "installed"
     return true
 end
 
+-- Detour self-gates on SilentAim.Enabled, so we never need to unhook.
 local function saUninstallHook()
-    if not SilentAim._hookedGetMousePos then return end
-    if type(hookfunction) == "function" and SilentAim._originalGetMousePos then
-        pcall(function()
-            hookfunction(SilentAim._originalGetMousePos, SilentAim._originalGetMousePos)
-        end)
-    end
-    SilentAim._hookedGetMousePos = false
-    SilentAim._originalGetMousePos = nil
-    SilentAim._status = "unhooked"
+    SilentAim._status = SilentAim._installed and "installed (idle)" or "uninstalled"
 end
 
--- Periodic reinstall for character changes / game reload
 task.spawn(function()
     while true do
         task.wait(2)
-        if SilentAim.Enabled then
-            if not SilentAim._hookedGetMousePos then
-                pcall(saInstallHook)
-            end
-        else
-            if SilentAim._hookedGetMousePos then
-                pcall(saUninstallHook)
-            end
+        if SilentAim.Enabled and not SilentAim._installed then
+            pcall(saInstallHook)
         end
     end
 end)
@@ -1051,7 +1069,7 @@ end)
 lp.CharacterAdded:Connect(function()
     saVelCache = setmetatable({}, { __mode = "k" })
     task.wait(1.5)
-    if SilentAim.Enabled and not SilentAim._hookedGetMousePos then
+    if SilentAim.Enabled and not SilentAim._installed then
         pcall(saInstallHook)
     end
 end)
@@ -1266,7 +1284,6 @@ STAB = {
 }
 local DAGGER_ANIM_IDS = { ["100725497418533"]=true, ["89448354637442"]=true }
 local function stabGetMyHRP() local c=lp.Character; return c and c:FindFirstChild("HumanoidRootPart") end
-local function stabGetMyHum() local c=lp.Character; return c and c:FindFirstChildOfClass("Humanoid") end
 local function stabGetKillerHRP(m)
     if not m then return nil end
     return m:FindFirstChild("HumanoidRootPart") or m.PrimaryPart
@@ -1485,27 +1502,32 @@ local function getIngameMap()
     map = map and map:FindFirstChild("Ingame")
     return map and map:FindFirstChild("Map")
 end
+
+-- Fixed: use os.clock(), always set cooldown after each attempt, only count real fires.
 task.spawn(function()
     while true do
         task.wait(0.1)
-        if AUTOGEN.Enabled and tick() >= AUTOGEN._nextFire then
+        if AUTOGEN.Enabled and os.clock() >= AUTOGEN._nextFire then
             local map = getIngameMap()
             local myRoot = getMyRoot()
             if map and myRoot then
-                local any = false
                 for _, obj in ipairs(map:GetChildren()) do
                     if (obj.Name == "Generator" or obj.Name == "FakeGenerator") and obj:IsA("Model") then
-                        local prog, main = obj:FindFirstChild("Progress"), obj:FindFirstChild("Main")
+                        local prog = obj:FindFirstChild("Progress")
+                        local main = obj:FindFirstChild("Main")
                         if prog and main and prog.Value ~= 100
                            and (main.Position - myRoot.Position).Magnitude <= AUTOGEN.MaxDistance then
                             local remotes = obj:FindFirstChild("Remotes")
                             local re = remotes and remotes:FindFirstChild("RE")
-                            if re then pcall(function() re:FireServer() end); any = true end
+                            if re then
+                                pcall(function() re:FireServer() end)
+                            end
                         end
                     end
                 end
-                if any then AUTOGEN._nextFire = tick() + AUTOGEN.Cooldown end
             end
+            -- Always advance the cooldown so the slider actually controls the rate.
+            AUTOGEN._nextFire = os.clock() + math.max(AUTOGEN.Cooldown or 1.0, 0.1)
         end
     end
 end)
@@ -2041,7 +2063,6 @@ end
 -- Silent Aim
 do
     local L = Tabs.SilentAim:AddLeftGroupbox("Silent Aim (Hooks GetMousePos)")
-
     L:AddToggle("SAOn", {
         Text = "Enable Silent Aim",
         Tooltip = "Master toggle. Redirects the game's aiming function so your ability lands on the killer even if you're not looking at them.",
@@ -2058,7 +2079,6 @@ do
             end
         end
     })
-
     L:AddToggle("SADusekkar", {
         Text = "Dusekkar (Plasma Beam)",
         Tooltip = "Redirects Plasma Beam projectiles to the nearest killer.",
@@ -2070,7 +2090,6 @@ do
             end
         end
     })
-
     L:AddToggle("SAJaneDoe", {
         Text = "Jane Doe (Crystal Pitch)",
         Tooltip = "Redirects Crystal Pitch (thrown crystal) to the nearest killer with velocity prediction.",
@@ -2082,34 +2101,30 @@ do
             end
         end
     })
-
     L:AddSlider("SAPrediction", {
         Text = "Lead Time (s)",
         Tooltip = "How far ahead to predict the target. 0.15 is a good default; raise for laggy servers.",
         Min = 0, Max = 0.6, Default = 0.15, Rounding = 2,
         Callback = function(v) SilentAim.Prediction = v end
     })
-
     L:AddSlider("SARange", {
         Text = "Max Range (studs)",
         Min = 20, Max = 800, Default = 300, Rounding = 0,
         Callback = function(v) SilentAim.MaxRange = v end
     })
-
     L:AddToggle("SAWall", {
         Text = "Wall Check",
         Tooltip = "Only redirect if the killer is visible (no walls in the way).",
         Default = true,
         Callback = function(v) SilentAim.WallCheck = v end
     })
-
     L:AddButton({ Text = "Reinstall Hook", Func = function()
-        pcall(saUninstallHook)
+        SilentAim._installed = false
+        SilentAim._hookedGetMousePos = false
         task.wait(0.2)
         local ok = pcall(saInstallHook)
         notify("Silent Aim", SilentAim._status)
     end })
-
     local R = Tabs.SilentAim:AddRightGroupbox("Info")
     R:AddLabel("How it works:")
     R:AddLabel("Hooks the game's GetPlayerMousePosition.GetMousePos and returns a predicted killer position when your ability is active.")
@@ -2216,8 +2231,12 @@ do
     G:AddToggle("GenOn", { Text = "Auto Generator", Default = false, Callback = function(v) AUTOGEN.Enabled = v end })
     G:AddSlider("GenRange", { Text = "Range", Min = 5, Max = 30, Default = 10, Rounding = 0,
         Callback = function(v) AUTOGEN.MaxDistance = v end })
-    G:AddSlider("GenInt", { Text = "Interval", Min = 0.3, Max = 5, Default = 1.0, Rounding = 2,
-        Callback = function(v) AUTOGEN.Cooldown = v end })
+    G:AddSlider("GenInt", { Text = "Interval (s)", Min = 0.1, Max = 5, Default = 1.0, Rounding = 2,
+        Callback = function(v)
+            AUTOGEN.Cooldown = v
+            -- Reset the next-fire clock so the change takes effect immediately.
+            AUTOGEN._nextFire = math.min(AUTOGEN._nextFire, os.clock() + v)
+        end })
     local R = Tabs.Misc:AddRightGroupbox("Hitbox Expander")
     R:AddToggle("HBEOn", { Text = "Enabled", Default = false, Callback = function(v)
         pcall(function() if v then hbeStart() else hbeStop() end end)

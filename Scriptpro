@@ -1,4 +1,4 @@
--- Wind Hub v1 — final build
+-- Wind Hub v1 — fixed UI build
 -- Tabs: ESP · Stam · Auto Block · Aim · Gen · Killer · HDT · Misc · UI Settings
 
 repeat task.wait() until game:IsLoaded()
@@ -78,7 +78,6 @@ end
 local function isSurvivor() return getMyRole() == "Survivors" end
 local function isKiller()   return getMyRole() == "Killers"   end
 
--- Helpless / grabbed detection — used by HDT and Auto Block
 local function hasHelplessEffect()
     local char = lp.Character
     if not char then return true end
@@ -159,14 +158,15 @@ local function fireBlock()
 end
 
 -- =========================================================
--- BEHEAD BLACKLIST (user can add IDs via UI)
+-- Behead handling
 -- =========================================================
-local BEHEAD_SOUND_IDS = {}   -- populated from UI textbox
-local IGNORE_BEHEAD    = true -- master toggle
-local LOG_TRIGGER_IDS  = false -- prints IDs to console so user can find behead
+local BEHEAD_SOUND_IDS = {}     -- populated by clicking "Mark Last Logged ID"
+local IGNORE_BEHEAD    = true
+local LOG_TRIGGER_IDS  = false
+_G.WindHub_LastLoggedID = nil
 
 -- =========================================================
--- M1 animation set (used for box "Appear on M1" mode)
+-- M1 animations
 -- =========================================================
 local M1_ANIM_IDS = {}
 for _, id in ipairs({
@@ -180,10 +180,9 @@ for _, id in ipairs({
 }) do M1_ANIM_IDS[id] = true end
 
 -- =========================================================
--- Facing Visual — simple box / circle
+-- Facing visual
 -- =========================================================
 local FacingVisual = {
-    -- Box
     BoxEnabled    = true,
     BoxWidth      = 12,
     BoxHeight     = 8,
@@ -191,11 +190,10 @@ local FacingVisual = {
     BoxColor      = Color3.fromRGB(255, 60, 60),
     BoxMaterial   = "Neon",
     BoxTransparency = 0.55,
-    AppearMode    = "Always",    -- "Always" | "M1"
+    AppearMode    = "Always",
     M1FlashDuration = 0.45,
     M1FlashUntil  = setmetatable({}, { __mode = "k" }),
 
-    -- Circle
     CircleEnabled = false,
     CircleOffset  = 3.45,
     CircleRadius  = 12,
@@ -307,14 +305,6 @@ local function ensureVisualsFor(killer)
     if FacingVisual.BoxEnabled then createBox(killer) else destroyBox(killer) end
     if FacingVisual.CircleEnabled then createCircle(killer) else destroyCircle(killer) end
 end
-local function refreshVisualToggle()
-    for k, data in pairs(FacingVisual.boxes) do applyBoxAppearance(data, k) end
-    for _, data in pairs(FacingVisual.circles) do
-        if data.adornment and data.adornment.Parent then
-            data.adornment.Transparency = FacingVisual.CircleEnabled and 0.35 or 1
-        end
-    end
-end
 local function ensureBoxes()
     if not KillersFolder then return end
     for _, k in ipairs(KillersFolder:GetChildren()) do
@@ -352,7 +342,7 @@ task.spawn(function()
     end
 end)
 
--- Hook killer M1 anims so "Appear on M1" mode works
+-- M1 flash hooks
 local killerM1Conns = setmetatable({}, { __mode = "k" })
 local function hookKillerForM1Flash(killer)
     if not killer or not killer:IsA("Model") then return end
@@ -412,7 +402,7 @@ local function nearestKillerPart()
 end
 
 -- =========================================================
--- HDT — blocked by helpless
+-- HDT
 -- =========================================================
 local HDT_Trigger
 HDT = {
@@ -500,47 +490,10 @@ lp.CharacterAdded:Connect(function()
 end)
 
 -- =========================================================
--- Transient block check
+-- Block check
 -- =========================================================
-local function spawnTransientBox(killerRoot, hit)
-    if not FacingVisual.BoxEnabled then return end
-    if not killerRoot or not killerRoot.Parent then return end
-    local look = killerRoot.CFrame.LookVector
-    local flat = Vector3.new(look.X, 0, look.Z)
-    if flat.Magnitude < 1e-4 then return end
-    flat = flat.Unit
-    local part = Instance.new("Part")
-    part.Name = "WindHubBlockFlash"
-    part.Anchored = true
-    part.CanCollide = false
-    part.CanTouch = false
-    part.CanQuery = false
-    part.Massless = true
-    part.CastShadow = false
-    part.Material = Enum.Material.Neon
-    part.Size = Vector3.new(FacingVisual.BoxWidth, FacingVisual.BoxHeight, FacingVisual.BoxLength)
-    part.CFrame = CFrame.lookAt(
-        killerRoot.Position + flat * (FacingVisual.BoxLength * 0.5),
-        killerRoot.Position + flat * (FacingVisual.BoxLength * 0.5 + 1)
-    )
-    part.Color = hit and Color3.fromRGB(0, 255, 100) or Color3.fromRGB(255, 50, 50)
-    part.Transparency = 0.35
-    part.Parent = workspace
-    task.spawn(function()
-        local start = tick()
-        local life = 0.15
-        while tick() - start < life and part.Parent do
-            local a = (tick() - start) / life
-            part.Transparency = 0.35 + a * 0.65
-            RunService.Heartbeat:Wait()
-        end
-        if part.Parent then part:Destroy() end
-    end)
-end
-
 local function performBlockCheck(killerModel)
     if not CFG.AutoBlockEnabled or not isSurvivor() then return end
-    -- Can't block while helpless
     if hasHelplessEffect() then return end
     if not killerModel or not killerModel.Parent then return end
     local killerRoot = killerModel:FindFirstChild("HumanoidRootPart")
@@ -595,8 +548,6 @@ local function performBlockCheck(killerModel)
             task.spawn(function() pcall(function() HDT_Trigger(false) end) end)
         end
     end
-    -- Small red/green flash for visibility
-    if inBox then spawnTransientBox(killerRoot, true) end
 end
 
 local lastAutoBlockByKiller = setmetatable({}, { __mode = "k" })
@@ -606,7 +557,6 @@ local function tryAutoBlock(killerModel, soundId)
     if not isSurvivor() then return end
     if hasHelplessEffect() then return end
     if not killerModel or not killerModel.Parent then return end
-    -- Behead skip
     if IGNORE_BEHEAD and soundId and BEHEAD_SOUND_IDS[soundId] then return end
     local now = tick()
     local last = lastAutoBlockByKiller[killerModel]
@@ -667,6 +617,7 @@ local function onSoundTrigger(sound)
     if not id or not TRIGGER_SOUNDS[id] then return end
     local ancestor = sound:FindFirstAncestorOfClass("Model")
     if not ancestor or ancestor.Parent ~= KillersFolder then return end
+    _G.WindHub_LastLoggedID = id
     if LOG_TRIGGER_IDS then
         print(string.format("[Wind Hub] Trigger sound ID: %s | Killer: %s | Sound: %s",
             id, ancestor.Name, sound.Name))
@@ -693,7 +644,7 @@ if KillersFolder then
 end
 
 -- =========================================================
--- Survivor Stun AIM (unchanged behaviour)
+-- Survivor Stun AIM
 -- =========================================================
 local AIM = {
     Enabled = false, AimMode = "Camera", Smooth = 1.0,
@@ -1113,7 +1064,7 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- =========================================================
--- KILLER — Parry + M1-triggered aim
+-- Killer parry + M1 aim
 -- =========================================================
 local KillerUtil = {
     ParryEnabled  = false,
@@ -1262,7 +1213,7 @@ RunService:BindToRenderStep("WindHubKillerAim", Enum.RenderPriority.Camera.Value
 end)
 
 -- =========================================================
--- ESP — per-model tracking, robust
+-- ESP
 -- =========================================================
 local ESP_CFG = {
     Killers   = { Enabled = true, Box = true, Chams = true, Name = true, Distance = true, Tracer = false,
@@ -1610,7 +1561,7 @@ end)
 -- =========================================================
 local Window = Library:CreateWindow({
     Title = "Wind Hub v1", Footer = "v1",
-    Icon = "wind",              -- Lucide wind icon
+    Icon = "wind",
     NotifySide = "Right", ShowCustomCursor = true,
 })
 local Tabs = {
@@ -1705,39 +1656,33 @@ end
 do
     local L = Tabs.AutoBlock:AddLeftGroupbox("Auto Block")
     L:AddToggle("AB", { Text = "Enable Auto Block",
-        Tooltip = "Sound-only, no cooldown. Fires only if you are inside the box and not helpless.",
+        Tooltip = "Sound-only. Fires only if you're inside the box, not helpless, and not a beheaded sound.",
         Default = false, Callback = function(v) CFG.AutoBlockEnabled = v end })
     L:AddToggle("ABSnd", { Text = "Sound Trigger", Default = true, Callback = function(v) CFG.SoundTrigger = v end })
     L:AddToggle("ABWall",{ Text = "Wall Check",    Default = true, Callback = function(v) CFG.WallCheck = v end })
     L:AddButton({ Text = "Block Now", Func = function() task.spawn(function() pcall(fireBlock) end) end })
 
-    -- Behead handling
     local B = Tabs.AutoBlock:AddLeftGroupbox("Behead Handling")
-    B:AddToggle("ABIgnoreBehead", { Text = "Ignore Behead", Default = true,
+    B:AddToggle("ABIgnoreBehead", { Text = "Ignore Behead Sounds", Default = true,
         Callback = function(v) IGNORE_BEHEAD = v end })
-    B:AddToggle("ABLogIds", { Text = "Log Trigger Sound IDs to Console",
-        Tooltip = "Turn this on, get beheaded, then check the console. Copy the ID and paste it into the box below.",
-        Default = false,
+    B:AddToggle("ABLogIds", { Text = "Log Trigger IDs to Console", Default = false,
         Callback = function(v) LOG_TRIGGER_IDS = v end })
-    B:AddTextbox({
-        Title = "Behead Sound IDs (comma-separated)",
-        Default = "",
-        TextDisappear = false,
-        Callback = function(text)
-            BEHEAD_SOUND_IDS = {}
-            for id in tostring(text):gmatch("[^,%s]+") do
-                local clean = id:match("(%d+)")
-                if clean then BEHEAD_SOUND_IDS[clean] = true end
-            end
-            notify("Wind Hub v1", "Behead list set: " .. #text .. " chars")
+    B:AddButton({ Text = "Mark Last Logged ID as Behead", Func = function()
+        if _G.WindHub_LastLoggedID then
+            BEHEAD_SOUND_IDS[_G.WindHub_LastLoggedID] = true
+            notify("Wind Hub v1", "Behead marked: " .. _G.WindHub_LastLoggedID)
+        else
+            notify("Wind Hub v1", "No ID logged yet — turn on logging first")
         end
-    })
-    B:AddLabel("1. Turn on 'Log Trigger Sound IDs'")
+    end })
+    B:AddButton({ Text = "Clear Behead List", Func = function()
+        BEHEAD_SOUND_IDS = {}
+        notify("Wind Hub v1", "Behead list cleared")
+    end })
+    B:AddLabel("1. Turn on 'Log Trigger IDs'")
     B:AddLabel("2. Get beheaded in game")
-    B:AddLabel("3. Copy the ID from console")
-    B:AddLabel("4. Paste it above → blocks on behead are skipped")
+    B:AddLabel("3. Click 'Mark Last Logged ID'")
 
-    -- Simple visual config
     local D = Tabs.AutoBlock:AddRightGroupbox("Box")
     D:AddToggle("BoxEnabled", { Text = "Show Box", Default = true,
         Callback = function(v)
@@ -1810,7 +1755,7 @@ do
     R:AddSlider("ChanceLock",    { Text = "Lock Time (s)", Min = 0.3, Max = 3.0, Default = 0.9, Rounding = 2, Callback = function(v) ChanceAimbot.LockTime = v end })
     R:AddSlider("ChancePredMin", { Text = "Prediction Min", Min = 0, Max = 10, Default = 2, Rounding = 1, Callback = function(v) ChanceAimbot.PredMin = v end })
     R:AddSlider("ChancePredMax", { Text = "Prediction Max", Min = 0, Max = 15, Default = 3, Rounding = 1, Callback = function(v) ChanceAimbot.PredMax = v end })
-    R:AddSlider("ChanceTurn",    { Text = "Turn / Direction Change Lead", Min = 0, Max = 3, Default = 1.0, Rounding = 2, Callback = function(v) ChanceAimbot.TurnLeadMult = v end })
+    R:AddSlider("ChanceTurn",    { Text = "Turn Lead", Min = 0, Max = 3, Default = 1.0, Rounding = 2, Callback = function(v) ChanceAimbot.TurnLeadMult = v end })
 end
 
 -- Gen Tab

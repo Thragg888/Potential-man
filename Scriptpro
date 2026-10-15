@@ -1,4 +1,4 @@
--- Wind Hub v1 — assembled build
+-- Wind Hub v1 — assembled build (non-blocking UI load)
 -- Tabs: ESP · Stam · Auto Block · Aim · Gen · Killer · HDT · Misc · Veeronica · UI Settings
 
 repeat task.wait() until game:IsLoaded()
@@ -23,8 +23,13 @@ local Stats              = game:GetService("Stats")
 local UIS                = game:GetService("UserInputService")
 
 local lp = Players.LocalPlayer
-local PlayerGui = lp:WaitForChild("PlayerGui", 30)
-local MainUI    = PlayerGui:WaitForChild("MainUI", 60)
+local PlayerGui = lp:FindFirstChildOfClass("PlayerGui") or lp:WaitForChild("PlayerGui", 10)
+
+-- Non-blocking: MainUI is only used lazily inside trySignalBlock.
+local MainUI
+task.spawn(function()
+    MainUI = PlayerGui:WaitForChild("MainUI", 300)
+end)
 
 local Camera = Workspace.CurrentCamera
 Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
@@ -43,15 +48,18 @@ do
     if not RemoteEvent then warn("[Wind Hub] RemoteEvent not found") end
 end
 
-local PlayersFolder, KillersFolder, SurvivorsFolder
-do
-    local ok, res = pcall(function() return workspace:WaitForChild("Players", 8) end)
-    PlayersFolder = (ok and res) or workspace:FindFirstChild("Players")
-    if PlayersFolder then
-        KillersFolder   = PlayersFolder:FindFirstChild("Killers")
-        SurvivorsFolder = PlayersFolder:FindFirstChild("Survivors")
+-- Non-blocking: folders resolve in background; callbacks re-check at use time.
+local PlayersFolder = Workspace:FindFirstChild("Players")
+local KillersFolder = PlayersFolder and PlayersFolder:FindFirstChild("Killers") or nil
+local SurvivorsFolder = PlayersFolder and PlayersFolder:FindFirstChild("Survivors") or nil
+task.spawn(function()
+    while not PlayersFolder do
+        task.wait(0.25)
+        PlayersFolder = Workspace:FindFirstChild("Players")
     end
-end
+    if not KillersFolder then KillersFolder = PlayersFolder:WaitForChild("Killers", 60) end
+    if not SurvivorsFolder then SurvivorsFolder = PlayersFolder:WaitForChild("Survivors", 60) end
+end)
 
 local function buildBuffer(str)
     local bytes = { 3, #str, 0, 0, 0 }
@@ -314,11 +322,12 @@ local function ensureBoxes()
         end
     end
 end
-if KillersFolder then
+task.spawn(function()
+    while not KillersFolder do task.wait(0.5) end
     KillersFolder.ChildAdded:Connect(function(k) if k:IsA("Model") then ensureVisualsFor(k) end end)
     KillersFolder.ChildRemoved:Connect(function(k) destroyBox(k); destroyCircle(k) end)
-    task.spawn(function() while true do task.wait(0.5); ensureBoxes() end end)
-end
+    while true do task.wait(0.5); ensureBoxes() end
+end)
 task.spawn(function()
     while true do
         RunService.Heartbeat:Wait()
@@ -372,12 +381,13 @@ local function hookKillerForM1Flash(killer)
         end
     end)
 end
-if KillersFolder then
+task.spawn(function()
+    while not KillersFolder do task.wait(0.5) end
     for _, k in ipairs(KillersFolder:GetChildren()) do
         if k:IsA("Model") then hookKillerForM1Flash(k) end
     end
     KillersFolder.ChildAdded:Connect(function(k) if k:IsA("Model") then hookKillerForM1Flash(k) end end)
-end
+end)
 
 local RAY_LOS = RaycastParams.new()
 RAY_LOS.FilterType = Enum.RaycastFilterType.Exclude
@@ -636,10 +646,11 @@ local function hookSound(sound)
     end)
     if sound.IsPlaying then onSoundTrigger(sound) end
 end
-if KillersFolder then
+task.spawn(function()
+    while not KillersFolder do task.wait(0.5) end
     for _, d in ipairs(KillersFolder:GetDescendants()) do if d:IsA("Sound") then hookSound(d) end end
     KillersFolder.DescendantAdded:Connect(function(d) if d:IsA("Sound") then hookSound(d) end end)
-end
+end)
 
 -- =========================================================
 -- Survivor Stun AIM
@@ -1339,7 +1350,9 @@ end
 -- Stamina
 -- =========================================================
 local Sprinting = nil
-pcall(function() Sprinting = require(ReplicatedStorage.Systems.Character.Game.Sprinting) end)
+task.spawn(function()
+    pcall(function() Sprinting = require(ReplicatedStorage.Systems.Character.Game.Sprinting) end)
+end)
 local STAM = {
     Mode = "Regular", orig = nil,
     SEMI_MAX = 150, SEMI_LOSS = 4, SEMI_GAIN = 40, SEMI_SPRINT = 28,
@@ -1398,7 +1411,10 @@ local function stamSetMode(mode)
         end)
     end
 end
-if Sprinting then stamSnapshot() end
+task.spawn(function()
+    while not Sprinting do task.wait(0.5) end
+    stamSnapshot()
+end)
 
 -- =========================================================
 -- INPUT
@@ -1430,10 +1446,12 @@ local Tabs = {
     Misc       = Window:AddTab("Misc", "cog"),
     UISet      = Window:AddTab("UI Settings", "settings"),
 }
-local function notify(t, d) Library:Notify({ Title = t, Description = d, Time = 4 }) end
+local function notify(t, d)
+    pcall(function() Library:Notify({ Title = t, Description = d, Time = 4 }) end)
+end
 
 -- ESP Tab
-do
+pcall(function()
     local L = Tabs.ESP:AddLeftGroupbox("Killer ESP")
     L:AddToggle("ESPK", { Text = "Enabled", Default = true, Callback = function(v)
         ESP_CFG.Killers.Enabled = v
@@ -1491,10 +1509,10 @@ do
         ITEM_HIGHLIGHTS = setmetatable({}, { __mode = "k" })
         notify("Wind Hub v1", "ESP cleared")
     end })
-end
+end)
 
 -- Stamina Tab
-do
+pcall(function()
     local L = Tabs.Stam:AddLeftGroupbox("Sprint")
     if not Sprinting then L:AddLabel("No sprinting module found")
     else
@@ -1505,10 +1523,10 @@ do
         L:AddLabel("Semi cheats: max 150, loss 4, gain 40, sprint 28")
         L:AddLabel("Infinite: locked to MaxStamina, no drain")
     end
-end
+end)
 
 -- Auto Block Tab
-do
+pcall(function()
     local L = Tabs.AutoBlock:AddLeftGroupbox("Auto Block")
     L:AddToggle("AB", { Text = "Enable Auto Block",
         Tooltip = "Sound-only. Fires only if you're inside the box, not helpless, and not a beheaded sound.",
@@ -1555,9 +1573,12 @@ do
         Callback = function(v)
             FacingVisual.AppearMode = (v == "Always") and "Always" or "M1"
         end })
-    D:AddLabel("Box Color"):AddColorPicker("BoxColor", {
-        Default = Color3.fromRGB(255, 60, 60),
-        Callback = function(c) FacingVisual.BoxColor = c end })
+    pcall(function()
+        D:AddColorPicker("BoxColor", {
+            Title = "Box Color",
+            Default = Color3.fromRGB(255, 60, 60),
+            Callback = function(c) FacingVisual.BoxColor = c end })
+    end)
 
     local C = Tabs.AutoBlock:AddRightGroupbox("Circle")
     C:AddToggle("CircEnabled", { Text = "Show Circle", Default = false,
@@ -1573,13 +1594,16 @@ do
         Callback = function(v) FacingVisual.CircleOffset = v end })
     C:AddSlider("CircSize", { Text = "Size (radius)", Min = 2, Max = 40, Default = 12, Rounding = 0,
         Callback = function(v) FacingVisual.CircleRadius = v end })
-    C:AddLabel("Circle Color"):AddColorPicker("CircColor", {
-        Default = Color3.fromRGB(80, 200, 255),
-        Callback = function(c) FacingVisual.CircleColor = c end })
-end
+    pcall(function()
+        C:AddColorPicker("CircColor", {
+            Title = "Circle Color",
+            Default = Color3.fromRGB(80, 200, 255),
+            Callback = function(c) FacingVisual.CircleColor = c end })
+    end)
+end)
 
 -- Aim Tab
-do
+pcall(function()
     local L = Tabs.Aim:AddLeftGroupbox("Survivor Stun Aim")
     L:AddToggle("AimOn", { Text = "Enabled", Default = false, Callback = function(v) AIM.Enabled = v end })
     L:AddButton({ Text = "Pulse 3s (C)", Func = function() AimFor(3.0) end })
@@ -1598,33 +1622,35 @@ do
             if v then chanceScanButtons() else ChanceAimbot._isLocking = false; ChanceAimbot._hooked = {} end
         end })
     R:AddToggle("ChanceFire", { Text = "Fire Shoot Remote on Keybind", Default = true, Callback = function(v) ChanceAimbot.FireRemote = v end })
-    R:AddLabel("PC keybind (fires aimlock)"):AddKeyPicker("ChanceKey", {
-        Default = "V", Mode = "Press", Text = "Chance Aimlock", NoUI = false,
-        Callback = function()
-            if not ChanceAimbot.Enabled then return end
-            chanceStartAimlock()
-            if ChanceAimbot.FireRemote and RemoteEvent then
-                pcall(function() RemoteEvent:FireServer("UseActorAbility", "Shoot") end)
-            end
-        end })
+    pcall(function()
+        R:AddKeyPicker("ChanceKey", {
+            Default = "V", Mode = "Press", Text = "Chance Aimlock", NoUI = false,
+            Callback = function()
+                if not ChanceAimbot.Enabled then return end
+                chanceStartAimlock()
+                if ChanceAimbot.FireRemote and RemoteEvent then
+                    pcall(function() RemoteEvent:FireServer("UseActorAbility", "Shoot") end)
+                end
+            end })
+    end)
     R:AddSlider("ChanceLock",    { Text = "Lock Time (s)", Min = 0.3, Max = 3.0, Default = 0.9, Rounding = 2, Callback = function(v) ChanceAimbot.LockTime = v end })
     R:AddSlider("ChancePredMin", { Text = "Prediction Min", Min = 0, Max = 10, Default = 2, Rounding = 1, Callback = function(v) ChanceAimbot.PredMin = v end })
     R:AddSlider("ChancePredMax", { Text = "Prediction Max", Min = 0, Max = 15, Default = 3, Rounding = 1, Callback = function(v) ChanceAimbot.PredMax = v end })
     R:AddSlider("ChanceTurn",    { Text = "Turn Lead", Min = 0, Max = 3, Default = 1.0, Rounding = 2, Callback = function(v) ChanceAimbot.TurnLeadMult = v end })
-end
+end)
 
 -- Gen Tab
-do
+pcall(function()
     local G = Tabs.Gen:AddLeftGroupbox("Auto Generator")
     G:AddToggle("GenOn", { Text = "Enable Auto Gen", Default = false, Callback = function(v) AUTOGEN.Enabled = v; autogenLoop() end })
     G:AddSlider("GenRange", { Text = "Range (studs)", Min = 5, Max = 30, Default = 10, Rounding = 0, Callback = function(v) AUTOGEN.MaxDistance = v end })
     G:AddSlider("GenInt",   { Text = "Interval (s)",  Min = 0.5, Max = 5,  Default = 1.05, Rounding = 2, Callback = function(v) AUTOGEN.Interval = v end })
-end
+end)
 
 -- =========================================================
 -- KILLERS TAB — ported from CursedSaken + QTEs
 -- =========================================================
-do
+pcall(function()
     local VIM = game:GetService("VirtualInputManager")
 
     local function killerName()
@@ -2542,10 +2568,10 @@ do
         Noli._novaSeen={}
         Azure._actorCache=nil; Azure._targetCache=nil
     end)
-end
+end)
 
 -- HDT Tab
-do
+pcall(function()
     local L = Tabs.HDT:AddLeftGroupbox("HDT")
     L:AddToggle("HDTOn",   { Text = "Enabled",       Default = false, Callback = function(v) HDT.Enabled = v end })
     L:AddToggle("HDTAuto", { Text = "Auto on Block", Default = true,  Callback = function(v) HDT.AutoTrigger = v end })
@@ -2557,10 +2583,10 @@ do
     R:AddSlider("HDTSpd",  { Text = "Speed",             Min = 2,   Max = 40, Default = 12, Rounding = 0, Callback = function(v) HDT.Speed = v end })
     R:AddSlider("HDTStop", { Text = "Stop Distance",     Min = 0.5, Max = 10, Default = 2, Rounding = 1,  Callback = function(v) HDT.StopDistance = v end })
     R:AddSlider("HDTRange",{ Text = "Max Range",         Min = 10,  Max = 120,Default = 40, Rounding = 0, Callback = function(v) HDT.MaxRange = v end })
-end
+end)
 
 -- Misc Tab
-do
+pcall(function()
     local L = Tabs.Misc:AddLeftGroupbox("Utility")
     L:AddButton({ Text = "Fullbright", Func = function()
         pcall(function()
@@ -2583,12 +2609,12 @@ do
         local h = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
         if h then h.Health = 0 end
     end })
-end
+end)
 
 -- =========================================================
 -- VEERONICA TAB
 -- =========================================================
-do
+pcall(function()
     local VIM = game:GetService("VirtualInputManager")
     local V = { AutoTrick=false, AutoTrickThread=nil, SkateControl=false, AntiRebound=false,
         UnlimitedSk8=false, AutoFarmSk8=false, AutoFarmSk8Started=false, CustomStats=false,
@@ -2837,10 +2863,10 @@ do
     Rage:AddToggle("VEverywhere", { Text="Sk8 Everywhere", Default=false, Callback=function(v) V.Sk8Everywhere=v; veeSetEverywhere(v) end })
 
     notify("Wind Hub v1", "Veeronica tab loaded")
-end
+end)
 
 -- UI Settings
-do
+pcall(function()
     ThemeManager:SetLibrary(Library)
     SaveManager:SetLibrary(Library)
     SaveManager:IgnoreThemeSettings()
@@ -2850,10 +2876,12 @@ do
     SaveManager:BuildConfigSection(Tabs.UISet)
     ThemeManager:ApplyToTab(Tabs.UISet)
     local M = Tabs.UISet:AddLeftGroupbox("Menu")
-    M:AddLabel("Menu key"):AddKeyPicker("MenuKeybind", { Default = "RightShift", NoUI = true, Text = "Menu keybind" })
+    pcall(function()
+        M:AddKeyPicker("MenuKeybind", { Default = "RightShift", NoUI = true, Text = "Menu keybind" })
+    end)
     M:AddButton({ Text = "Unload", Func = function() Library:Unload() end })
     Library.ToggleKeybind = Options.MenuKeybind
-end
+end)
 
-SaveManager:LoadAutoloadConfig()
+pcall(function() SaveManager:LoadAutoloadConfig() end)
 notify("Wind Hub v1", "loaded")

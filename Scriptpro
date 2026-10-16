@@ -1,6 +1,5 @@
--- SCP Hub v12 — Starlight Interface Suite · sliders step by 1
+-- SCP Hub v13 — Rayfield Gen 2 · sliders step by 1
 -- · All features · Box size + count editable · No loading screen
--- · Fixes: tab system, missing AIM/Veeronica defs, slider decimals
 
 repeat task.wait() until game:IsLoaded()
 
@@ -29,9 +28,9 @@ if not PlayerGui then
 end
 
 -- =========================================================
--- Starlight Interface Suite
+-- Rayfield Gen 2
 -- =========================================================
-local Starlight = loadstring(game:HttpGet("https://raw.nebulasoftworks.xyz/starlight"))()
+local Rayfield = loadstring(game:HttpGet("https://sirius.menu/gen2"))()
 
 -- =========================================================
 -- Game bootstrap
@@ -1344,136 +1343,133 @@ local function veeAutoPhase(v)
 end
 
 -- =========================================================
--- STARLIGHT UI
+-- RAYFIELD GEN 2 UI
 -- =========================================================
-getgenv().InterfaceName = "SCPHub"
-getgenv().SecureMode = true
-
-local Window = Starlight:CreateWindow({
-    Name = "SCP Hub",
-    Subtitle = "v12",
-    LoadingEnabled = false,
+local Window = Rayfield:CreateWindow({
+    name = "SCP Hub",
+    subtitle = "v13 · Rayfield Gen2",
+    sidebarLayout = true,
+    configuration = { autoSave = true, autoLoad = true, fileName = "SCPHub" },
 })
 
 -- ESP Tab
-local ESPTab = Window:CreateTab({ Name = "ESP", Icon = "eye", ImageSource = "Material" })
+local ESPTab = Window:CreateTab({ name = "ESP", icon = 93364949241311 })
 ESPTab:CreateSection("Killer ESP")
-ESPTab:CreateToggle({ Name = "Killer ESP Enabled", CurrentValue = true, Callback = function(v) ESP_CFG.Killers.Enabled = v end })
-ESPTab:CreateToggle({ Name = "Killer Box", CurrentValue = true, Callback = function(v) ESP_CFG.Killers.Box = v end })
-ESPTab:CreateToggle({ Name = "Killer Chams", CurrentValue = true, Callback = function(v) ESP_CFG.Killers.Chams = v end })
-ESPTab:CreateToggle({ Name = "Killer Name", CurrentValue = true, Callback = function(v) ESP_CFG.Killers.Name = v end })
-ESPTab:CreateToggle({ Name = "Killer Distance", CurrentValue = true, Callback = function(v) ESP_CFG.Killers.Distance = v end })
+ESPTab:CreateToggle({ name = "Killer ESP Enabled", default = true, callback = function(v) ESP_CFG.Killers.Enabled = v end })
+ESPTab:CreateToggle({ name = "Killer Box", default = true, callback = function(v) ESP_CFG.Killers.Box = v end })
+ESPTab:CreateToggle({ name = "Killer Chams", default = true, callback = function(v) ESP_CFG.Killers.Chams = v end })
+ESPTab:CreateToggle({ name = "Killer Name", default = true, callback = function(v) ESP_CFG.Killers.Name = v end })
+ESPTab:CreateToggle({ name = "Killer Distance", default = true, callback = function(v) ESP_CFG.Killers.Distance = v end })
 ESPTab:CreateSection("Survivor ESP")
-ESPTab:CreateToggle({ Name = "Survivor ESP Enabled", CurrentValue = true, Callback = function(v) ESP_CFG.Survivors.Enabled = v end })
-ESPTab:CreateToggle({ Name = "Survivor Box", CurrentValue = true, Callback = function(v) ESP_CFG.Survivors.Box = v end })
-ESPTab:CreateToggle({ Name = "Survivor Chams", CurrentValue = true, Callback = function(v) ESP_CFG.Survivors.Chams = v end })
-ESPTab:CreateToggle({ Name = "Survivor Name", CurrentValue = true, Callback = function(v) ESP_CFG.Survivors.Name = v end })
-ESPTab:CreateToggle({ Name = "Survivor Distance", CurrentValue = true, Callback = function(v) ESP_CFG.Survivors.Distance = v end })
+ESPTab:CreateToggle({ name = "Survivor ESP Enabled", default = true, callback = function(v) ESP_CFG.Survivors.Enabled = v end })
+ESPTab:CreateToggle({ name = "Survivor Box", default = true, callback = function(v) ESP_CFG.Survivors.Box = v end })
+ESPTab:CreateToggle({ name = "Survivor Chams", default = true, callback = function(v) ESP_CFG.Survivors.Chams = v end })
+ESPTab:CreateToggle({ name = "Survivor Name", default = true, callback = function(v) ESP_CFG.Survivors.Name = v end })
+ESPTab:CreateToggle({ name = "Survivor Distance", default = true, callback = function(v) ESP_CFG.Survivors.Distance = v end })
 ESPTab:CreateSection("World")
-ESPTab:CreateToggle({ Name = "Generator ESP", CurrentValue = false, Callback = function(v) ESP_CFG.Generators.Enabled = v end })
-ESPTab:CreateToggle({ Name = "Item ESP", CurrentValue = false, Callback = function(v) ESP_CFG.Items.Enabled = v end })
-ESPTab:CreateButton({ Name = "Clear All ESP", Callback = function()
+ESPTab:CreateToggle({ name = "Generator ESP", default = false, callback = function(v) ESP_CFG.Generators.Enabled = v end })
+ESPTab:CreateToggle({ name = "Item ESP", default = false, callback = function(v) ESP_CFG.Items.Enabled = v end })
+ESPTab:CreateButton({ name = "Clear All ESP", callback = function()
     for m in pairs(ESP_TRACK) do espClear(m) end
 end })
 
 -- Auto Block Tab
-local ABTab = Window:CreateTab({ Name = "Auto Block", Icon = "shield", ImageSource = "Material" })
+local ABTab = Window:CreateTab({ name = "Auto Block", icon = 93364949241311 })
 ABTab:CreateSection("Auto Block")
-ABTab:CreateToggle({ Name = "Enable Auto Block", CurrentValue = false, Callback = function(v) AB_Cfg.Enabled = v end })
-ABTab:CreateToggle({ Name = "Sound Trigger", CurrentValue = true, Callback = function(v) AB_Cfg.SoundTrigger = v end })
-ABTab:CreateToggle({ Name = "Animation Trigger", CurrentValue = true, Callback = function(v) AB_Cfg.AnimTrigger = v end })
-ABTab:CreateToggle({ Name = "Wall Check", CurrentValue = true, Callback = function(v) AB_Cfg.WallCheck = v end })
-ABTab:CreateButton({ Name = "Block Now", Callback = function() task.spawn(fireBlock) end })
+ABTab:CreateToggle({ name = "Enable Auto Block", default = false, callback = function(v) AB_Cfg.Enabled = v end })
+ABTab:CreateToggle({ name = "Sound Trigger", default = true, callback = function(v) AB_Cfg.SoundTrigger = v end })
+ABTab:CreateToggle({ name = "Animation Trigger", default = true, callback = function(v) AB_Cfg.AnimTrigger = v end })
+ABTab:CreateToggle({ name = "Wall Check", default = true, callback = function(v) AB_Cfg.WallCheck = v end })
+ABTab:CreateButton({ name = "Block Now", callback = function() task.spawn(fireBlock) end })
 ABTab:CreateSection("Behead")
-ABTab:CreateToggle({ Name = "Ignore Behead Sounds", CurrentValue = true, Callback = function(v) IGNORE_BEHEAD = v end })
-ABTab:CreateButton({ Name = "Mark Last as Behead", Callback = function()
+ABTab:CreateToggle({ name = "Ignore Behead Sounds", default = true, callback = function(v) IGNORE_BEHEAD = v end })
+ABTab:CreateButton({ name = "Mark Last as Behead", callback = function()
     if _G.SCPHub_LastLoggedID then
         BEHEAD_IDS[_G.SCPHub_LastLoggedID] = true
     end
 end })
 
 -- Box Tab
-local BoxTab = Window:CreateTab({ Name = "Box", Icon = "box", ImageSource = "Material" })
+local BoxTab = Window:CreateTab({ name = "Box", icon = 93364949241311 })
 BoxTab:CreateSection("Box Settings")
-BoxTab:CreateToggle({ Name = "Show Box", CurrentValue = false, Callback = function(v)
+BoxTab:CreateToggle({ name = "Show Box", default = false, callback = function(v)
     BoxCfg.Enabled = v
     if not v then for k in pairs(BoxCfg.Long) do destroyLongBox(k) end
     else task.spawn(ensureBoxes) end
 end })
-BoxTab:CreateDropdown({ Name = "Appear Mode", Options = { "M1", "Always" }, CurrentValue = "M1", Callback = function(v)
+BoxTab:CreateDropdown({ name = "Appear Mode", options = { "M1", "Always" }, default = "M1", callback = function(v)
     BoxCfg.AppearMode = v
     if v == "Always" then task.spawn(ensureBoxes)
     else for k in pairs(BoxCfg.Long) do destroyLongBox(k) end end
 end })
 BoxTab:CreateSection("M1 Boxes (FP-style)")
-BoxTab:CreateSlider({ Name = "Boxes per M1", Min = 1, Max = 10, Default = 1, Increment = 1, Callback = function(v) BoxCfg.M1Boxes = v end })
-BoxTab:CreateSlider({ Name = "Spread", Min = 0, Max = 20, Default = 3, Increment = 1, Callback = function(v) BoxCfg.M1Spread = v end })
+BoxTab:CreateSlider({ name = "Boxes per M1", min = 1, max = 10, default = 1, increment = 1, callback = function(v) BoxCfg.M1Boxes = v end })
+BoxTab:CreateSlider({ name = "Spread", min = 0, max = 20, default = 3, increment = 1, callback = function(v) BoxCfg.M1Spread = v end })
 BoxTab:CreateSection("Always Box (SCP-Hub-style)")
-BoxTab:CreateSlider({ Name = "Width", Min = 1, Max = 60, Default = 12, Increment = 1, Callback = function(v) BoxCfg.Width = v end })
-BoxTab:CreateSlider({ Name = "Length", Min = 1, Max = 120, Default = 30, Increment = 1, Callback = function(v) BoxCfg.Length = v end })
-BoxTab:CreateSlider({ Name = "Height", Min = 1, Max = 30, Default = 8, Increment = 1, Callback = function(v) BoxCfg.Height = v end })
-BoxTab:CreateSlider({ Name = "Transparency", Min = 0, Max = 1, Default = 0, Increment = 1, Callback = function(v) BoxCfg.Transparency = v end })
-BoxTab:CreateColorPicker({ Name = "Color", Color = Color3.fromRGB(255,60,60), Callback = function(c) BoxCfg.Color = c end })
+BoxTab:CreateSlider({ name = "Width", min = 1, max = 60, default = 12, increment = 1, callback = function(v) BoxCfg.Width = v end })
+BoxTab:CreateSlider({ name = "Length", min = 1, max = 120, default = 30, increment = 1, callback = function(v) BoxCfg.Length = v end })
+BoxTab:CreateSlider({ name = "Height", min = 1, max = 30, default = 8, increment = 1, callback = function(v) BoxCfg.Height = v end })
+BoxTab:CreateSlider({ name = "Transparency", min = 0, max = 1, default = 0, increment = 1, callback = function(v) BoxCfg.Transparency = v end })
+BoxTab:CreateColorPicker({ name = "Color", color = Color3.fromRGB(255,60,60), callback = function(c) BoxCfg.Color = c end })
 
 -- Gen Tab
-local GenTab = Window:CreateTab({ Name = "Gen", Icon = "settings", ImageSource = "Material" })
+local GenTab = Window:CreateTab({ name = "Gen", icon = 93364949241311 })
 GenTab:CreateSection("Auto Generator")
-GenTab:CreateToggle({ Name = "Enable Auto Gen", CurrentValue = false, Callback = function(v) AUTOGEN.Enabled = v; autogenLoop() end })
-GenTab:CreateSlider({ Name = "Range", Min = 5, Max = 30, Default = 10, Increment = 1, Callback = function(v) AUTOGEN.MaxDistance = v end })
-GenTab:CreateSlider({ Name = "Interval", Min = 1, Max = 5, Default = 1, Increment = 1, Callback = function(v) AUTOGEN.Interval = v end })
+GenTab:CreateToggle({ name = "Enable Auto Gen", default = false, callback = function(v) AUTOGEN.Enabled = v; autogenLoop() end })
+GenTab:CreateSlider({ name = "Range", min = 5, max = 30, default = 10, increment = 1, callback = function(v) AUTOGEN.MaxDistance = v end })
+GenTab:CreateSlider({ name = "Interval", min = 1, max = 5, default = 1, increment = 1, callback = function(v) AUTOGEN.Interval = v end })
 
 -- Stamina Tab
-local StamTab = Window:CreateTab({ Name = "Stamina", Icon = "zap", ImageSource = "Material" })
+local StamTab = Window:CreateTab({ name = "Stamina", icon = 93364949241311 })
 StamTab:CreateSection("Sprint")
-StamTab:CreateDropdown({ Name = "Preset", Options = { "Regular", "Semi", "Infinite" }, CurrentValue = "Regular", Callback = function(v) stamSetMode(v) end })
+StamTab:CreateDropdown({ name = "Preset", options = { "Regular", "Semi", "Infinite" }, default = "Regular", callback = function(v) stamSetMode(v) end })
 
 -- HDT Tab
-local HDT_Tab = Window:CreateTab({ Name = "HDT", Icon = "mouse-pointer", ImageSource = "Material" })
+local HDT_Tab = Window:CreateTab({ name = "HDT", icon = 93364949241311 })
 HDT_Tab:CreateSection("HDT")
-HDT_Tab:CreateToggle({ Name = "Enabled", CurrentValue = false, Callback = function(v) HDT.Enabled = v end })
-HDT_Tab:CreateToggle({ Name = "Auto on Block", CurrentValue = true, Callback = function(v) HDT.AutoTrigger = v end })
-HDT_Tab:CreateSlider({ Name = "Speed", Min = 2, Max = 40, Default = 12, Increment = 1, Callback = function(v) HDT.Speed = v end })
-HDT_Tab:CreateSlider({ Name = "Stop Distance", Min = 1, Max = 10, Default = 2, Increment = 1, Callback = function(v) HDT.StopDistance = v end })
-HDT_Tab:CreateButton({ Name = "Trigger Now (Q)", Callback = function() task.spawn(function() pcall(function() HDT_Trigger(true) end) end) end })
+HDT_Tab:CreateToggle({ name = "Enabled", default = false, callback = function(v) HDT.Enabled = v end })
+HDT_Tab:CreateToggle({ name = "Auto on Block", default = true, callback = function(v) HDT.AutoTrigger = v end })
+HDT_Tab:CreateSlider({ name = "Speed", min = 2, max = 40, default = 12, increment = 1, callback = function(v) HDT.Speed = v end })
+HDT_Tab:CreateSlider({ name = "Stop Distance", min = 1, max = 10, default = 2, increment = 1, callback = function(v) HDT.StopDistance = v end })
+HDT_Tab:CreateButton({ name = "Trigger Now (Q)", callback = function() task.spawn(function() pcall(function() HDT_Trigger(true) end) end) end })
 
 -- Aim Tab
-local AimTab = Window:CreateTab({ Name = "Aim", Icon = "crosshair", ImageSource = "Material" })
+local AimTab = Window:CreateTab({ name = "Aim", icon = 93364949241311 })
 AimTab:CreateSection("Survivor Stun Aim")
-AimTab:CreateToggle({ Name = "Enabled", CurrentValue = false, Callback = function(v) AIM.Enabled = v end })
-AimTab:CreateToggle({ Name = "Aim on Stun", CurrentValue = true, Callback = function(v) AbilityHook.Enabled = v end })
-AimTab:CreateDropdown({ Name = "Aim Mode", Options = {"Camera","HRP","HRP+Camera"}, CurrentValue = "Camera", Callback = function(v) AIM.AimMode = v end })
-AimTab:CreateDropdown({ Name = "Prediction", Options = {"Off","Ping","Velocity","Both"}, CurrentValue = "Both", Callback = function(v) AIM.PredictMode = v end })
-AimTab:CreateSlider({ Name = "Smooth", Min = 1, Max = 1, Default = 1, Increment = 1, Callback = function(v) AIM.Smooth = v end })
+AimTab:CreateToggle({ name = "Enabled", default = false, callback = function(v) AIM.Enabled = v end })
+AimTab:CreateToggle({ name = "Aim on Stun", default = true, callback = function(v) AbilityHook.Enabled = v end })
+AimTab:CreateDropdown({ name = "Aim Mode", options = {"Camera","HRP","HRP+Camera"}, default = "Camera", callback = function(v) AIM.AimMode = v end })
+AimTab:CreateDropdown({ name = "Prediction", options = {"Off","Ping","Velocity","Both"}, default = "Both", callback = function(v) AIM.PredictMode = v end })
 AimTab:CreateSection("Chance Aimlock")
-AimTab:CreateToggle({ Name = "Enable", CurrentValue = false, Callback = function(v)
+AimTab:CreateToggle({ name = "Enable", default = false, callback = function(v)
     ChanceAimbot.Enabled = v
     if v then chanceScanButtons() else ChanceAimbot._isLocking = false; ChanceAimbot._hooked = {} end
 end })
-AimTab:CreateKeyPicker({ Name = "Keybind", Default = "V", Callback = function()
-    if ChanceAimbot.Enabled then chanceStartAimlock() end
+AimTab:CreateKeybind({ name = "Aimlock Key", default = "V", callback = function(k)
+    if ChanceAimbot.Enabled and k == "V" then chanceStartAimlock() end
 end })
 
 -- Veeronica Tab
-local VeeTab = Window:CreateTab({ Name = "Veeronica", Icon = "sparkles", ImageSource = "Material" })
+local VeeTab = Window:CreateTab({ name = "Veeronica", icon = 93364949241311 })
 VeeTab:CreateSection("Tricks")
-VeeTab:CreateToggle({ Name = "Auto Trick (Wall Box)", CurrentValue = false, Callback = function(v) V.AutoTrick = v; veeAutoTrickStart() end })
-VeeTab:CreateSlider({ Name = "Wall Radius", Min = 1, Max = 10, Default = 5, Increment = 1, Callback = function(v) V.WallTrickRadius = v end })
-VeeTab:CreateDropdown({ Name = "Input Method", Options = {"Key","Button","Both"}, CurrentValue = "Key", Callback = function(v) V.WallTrickMode = v end })
-VeeTab:CreateToggle({ Name = "Skate Control", CurrentValue = false, Callback = function(v) V.SkateControl = v; veeSkateCtrl(v) end })
-VeeTab:CreateToggle({ Name = "Anti Rebound", CurrentValue = false, Callback = function(v) V.AntiRebound = v; if v then veeInstallAR() end end })
-VeeTab:CreateToggle({ Name = "Unlimited Sk8", CurrentValue = false, Callback = function(v) V.UnlimitedSk8 = v; if v then veeInstallUSk8() end end })
-VeeTab:CreateToggle({ Name = "Auto Farm sk8", CurrentValue = false, Callback = function(v) V.AutoFarmSk8 = v; if v then veeFarmStart() end end })
-VeeTab:CreateToggle({ Name = "Auto Phase", CurrentValue = false, Callback = function(v) V.AutoPhase = v; veeAutoPhase(v) end })
+VeeTab:CreateToggle({ name = "Auto Trick (Wall Box)", default = false, callback = function(v) V.AutoTrick = v; veeAutoTrickStart() end })
+VeeTab:CreateSlider({ name = "Wall Radius", min = 1, max = 10, default = 5, increment = 1, callback = function(v) V.WallTrickRadius = v end })
+VeeTab:CreateDropdown({ name = "Input Method", options = {"Key","Button","Both"}, default = "Key", callback = function(v) V.WallTrickMode = v end })
+VeeTab:CreateToggle({ name = "Skate Control", default = false, callback = function(v) V.SkateControl = v; veeSkateCtrl(v) end })
+VeeTab:CreateToggle({ name = "Anti Rebound", default = false, callback = function(v) V.AntiRebound = v; if v then veeInstallAR() end end })
+VeeTab:CreateToggle({ name = "Unlimited Sk8", default = false, callback = function(v) V.UnlimitedSk8 = v; if v then veeInstallUSk8() end end })
+VeeTab:CreateToggle({ name = "Auto Farm sk8", default = false, callback = function(v) V.AutoFarmSk8 = v; if v then veeFarmStart() end end })
+VeeTab:CreateToggle({ name = "Auto Phase", default = false, callback = function(v) V.AutoPhase = v; veeAutoPhase(v) end })
 VeeTab:CreateSection("Custom Stats")
-VeeTab:CreateToggle({ Name = "Enable Custom Stats", CurrentValue = false, Callback = function(v) V.CustomStats = v; if v then veeApplyStats() else veeResetStats() end end })
-VeeTab:CreateSlider({ Name = "Skate Speed", Min = 1, Max = 10, Default = 1, Increment = 1, Callback = function(v) V.Sk8Speed = v; if V.CustomStats then veeSetStat("Sk8Speed", v) end end })
-VeeTab:CreateSlider({ Name = "Trick Boost", Min = 1, Max = 15, Default = 1, Increment = 1, Callback = function(v) V.Sk8TrickSpeed = v; if V.CustomStats then veeSetStat("Sk8TrickAirborneSpeed", v) end end })
-VeeTab:CreateSlider({ Name = "Bump Power", Min = 10, Max = 150, Default = 12, Increment = 1, Callback = function(v) V.Sk8BumpPower = v; if V.CustomStats then veeSetStat("Sk8BumpPower", v) end end })
+VeeTab:CreateToggle({ name = "Enable Custom Stats", default = false, callback = function(v) V.CustomStats = v; if v then veeApplyStats() else veeResetStats() end end })
+VeeTab:CreateSlider({ name = "Skate Speed", min = 1, max = 10, default = 1, increment = 1, callback = function(v) V.Sk8Speed = v; if V.CustomStats then veeSetStat("Sk8Speed", v) end end })
+VeeTab:CreateSlider({ name = "Trick Boost", min = 1, max = 15, default = 1, increment = 1, callback = function(v) V.Sk8TrickSpeed = v; if V.CustomStats then veeSetStat("Sk8TrickAirborneSpeed", v) end end })
+VeeTab:CreateSlider({ name = "Bump Power", min = 10, max = 150, default = 12, increment = 1, callback = function(v) V.Sk8BumpPower = v; if V.CustomStats then veeSetStat("Sk8BumpPower", v) end end })
 
 -- Misc Tab
-local MiscTab = Window:CreateTab({ Name = "Misc", Icon = "cog", ImageSource = "Material" })
+local MiscTab = Window:CreateTab({ name = "Misc", icon = 93364949241311 })
 MiscTab:CreateSection("Utility")
-MiscTab:CreateButton({ Name = "Fullbright", Callback = function()
+MiscTab:CreateButton({ name = "Fullbright", callback = function()
     pcall(function()
         Lighting.Ambient = Color3.new(1,1,1)
         Lighting.OutdoorAmbient = Color3.new(1,1,1)
@@ -1481,7 +1477,7 @@ MiscTab:CreateButton({ Name = "Fullbright", Callback = function()
         Lighting.ClockTime = 12
     end)
 end })
-MiscTab:CreateButton({ Name = "Show Chat", Callback = function()
+MiscTab:CreateButton({ name = "Show Chat", callback = function()
     pcall(function()
         local c = TextChatService:FindFirstChildOfClass("ChatWindowConfiguration")
         local i = TextChatService:FindFirstChildOfClass("ChatInputBarConfiguration")
@@ -1489,7 +1485,7 @@ MiscTab:CreateButton({ Name = "Show Chat", Callback = function()
         if i then i.Enabled = true end
     end)
 end })
-MiscTab:CreateButton({ Name = "Reset Character", Callback = function()
+MiscTab:CreateButton({ name = "Reset Character", callback = function()
     local h = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
     if h then h.Health = 0 end
 end })
@@ -1503,11 +1499,4 @@ _G.SCPHubInput = UIS.InputBegan:Connect(function(input, gpe)
     end
 end)
 
-task.wait(0.2)
-pcall(function()
-    StarterGui:SetCore("SendNotification", {
-        Title = "SCP Hub",
-        Text = "Loaded · Starlight UI",
-        Duration = 3,
-    })
-end)
+Window:Notify({ title = "SCP Hub", content = "Loaded · Rayfield Gen2", duration = 3 })

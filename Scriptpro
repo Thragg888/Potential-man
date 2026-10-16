@@ -1,7 +1,8 @@
--- SCP Hub — assembled build (restored)
--- · Dark theme · Loading screen w/ drawn LOCK logo + IMAGE background
--- · Hub UI shares the same IMAGE background
--- · UI Settings tab fixed (theme + save manager) · Veeronica invisible-box wall detection
+-- SCP Hub — assembled build (fixed v2)
+-- · Loading: [🔒] SCP HUB at TOP · image 9859971171 (fallback 9859971166) as bg
+-- · Box-on-M1 uses Forsaken Plus anim-map detection (fixes "always visible" bug)
+-- · Auto Gen uses Remotes:FindFirstChildOfClass("RemoteEvent")
+-- · UI Settings tab fixed · Veeronica invisible-box wall detection
 -- · Auto Block uses BOTH sound + killer-animation detection · Killer ESP per-category
 
 -- =========================================================
@@ -27,20 +28,16 @@ if not PlayerGui then
     PlayerGui = lp:FindFirstChildOfClass("PlayerGui")
 end
 
--- Shared background image (loading screen + hub)
-local BG_IMAGE           = "rbxassetid://9859971171"
-local BG_IMAGE_ALT       = "rbxassetid://9859971166"
-local BG_TRANSPARENCY    = 0.85  -- subtle (0 = opaque, 1 = invisible)
+local BG_IMAGE      = "rbxassetid://9859971171"
+local BG_IMAGE_ALT  = "rbxassetid://9859971166"
+local BG_TRANSPARENCY = 0.82
 
 -- =========================================================
--- LOADING SCREEN — drawn LOCK logo + IMAGE background
+-- LOADING SCREEN — [🔒] SCP HUB at top, image as bg
 -- =========================================================
 local Loading = {
-    StartTime = tick(),
-    MinDisplayTime = 3.0,
-    Progress = 0,
-    Done = false,
-    GUI = nil, Bar = nil, BarBG = nil, Pct = nil, Status = nil, Lock = nil,
+    StartTime = tick(), MinDisplayTime = 3.0, Progress = 0, Done = false,
+    GUI = nil, Bar = nil, BarBG = nil, Pct = nil, Status = nil,
 }
 
 local function safeTween(inst, ti, props)
@@ -50,43 +47,44 @@ local function safeTween(inst, ti, props)
     return nil
 end
 
-local function makeLock(parent, accent, dark)
+local function drawLockSmall(parent, accent, dark)
+    -- small lock drawn inside `parent` frame (aspect-locked)
     local body = Instance.new("Frame")
     body.Name = "LockBody"
     body.AnchorPoint = Vector2.new(0.5, 0)
-    body.Position = UDim2.fromScale(0.5, 0.46)
-    body.Size = UDim2.fromScale(0.55, 0.42)
+    body.Position = UDim2.fromScale(0.5, 0.45)
+    body.Size = UDim2.fromScale(0.72, 0.52)
     body.BackgroundColor3 = accent
     body.BorderSizePixel = 0
-    body.ZIndex = 6
+    body.ZIndex = 5
     body.Parent = parent
-    local bodyC = Instance.new("UICorner") bodyC.CornerRadius = UDim.new(0, 14) bodyC.Parent = body
+    local bc = Instance.new("UICorner") bc.CornerRadius = UDim.new(0, 8) bc.Parent = body
 
     local shackle = Instance.new("Frame")
     shackle.Name = "Shackle"
     shackle.AnchorPoint = Vector2.new(0.5, 1)
-    shackle.Position = UDim2.fromScale(0.5, 0.50)
-    shackle.Size = UDim2.fromScale(0.34, 0.30)
+    shackle.Position = UDim2.fromScale(0.5, 0.48)
+    shackle.Size = UDim2.fromScale(0.48, 0.32)
     shackle.BackgroundTransparency = 1
-    shackle.ZIndex = 5
+    shackle.ZIndex = 4
     shackle.Parent = parent
 
     local sTop = Instance.new("Frame")
     sTop.AnchorPoint = Vector2.new(0.5, 0)
     sTop.Position = UDim2.fromScale(0.5, 0)
-    sTop.Size = UDim2.fromScale(1, 0.22)
+    sTop.Size = UDim2.fromScale(1, 0.28)
     sTop.BackgroundColor3 = accent
     sTop.BorderSizePixel = 0
-    sTop.ZIndex = 5
+    sTop.ZIndex = 4
     sTop.Parent = shackle
-    local sTopC = Instance.new("UICorner") sTopC.CornerRadius = UDim.new(1, 0) sTopC.Parent = sTop
+    local stc = Instance.new("UICorner") stc.CornerRadius = UDim.new(1, 0) stc.Parent = sTop
 
     local sL = Instance.new("Frame")
     sL.Position = UDim2.fromScale(0, 0)
     sL.Size = UDim2.fromScale(0.22, 1)
     sL.BackgroundColor3 = accent
     sL.BorderSizePixel = 0
-    sL.ZIndex = 5
+    sL.ZIndex = 4
     sL.Parent = shackle
 
     local sR = Instance.new("Frame")
@@ -95,29 +93,27 @@ local function makeLock(parent, accent, dark)
     sR.Size = UDim2.fromScale(0.22, 1)
     sR.BackgroundColor3 = accent
     sR.BorderSizePixel = 0
-    sR.ZIndex = 5
+    sR.ZIndex = 4
     sR.Parent = shackle
 
     local kh = Instance.new("Frame")
     kh.AnchorPoint = Vector2.new(0.5, 0.5)
-    kh.Position = UDim2.fromScale(0.5, 0.34)
-    kh.Size = UDim2.fromScale(0.20, 0.20)
+    kh.Position = UDim2.fromScale(0.5, 0.35)
+    kh.Size = UDim2.fromScale(0.22, 0.22)
     kh.BackgroundColor3 = dark
     kh.BorderSizePixel = 0
-    kh.ZIndex = 7
+    kh.ZIndex = 6
     kh.Parent = body
-    local khC = Instance.new("UICorner") khC.CornerRadius = UDim.new(1, 0) khC.Parent = kh
+    local khc = Instance.new("UICorner") khc.CornerRadius = UDim.new(1, 0) khc.Parent = kh
 
     local ks = Instance.new("Frame")
     ks.AnchorPoint = Vector2.new(0.5, 0)
-    ks.Position = UDim2.fromScale(0.5, 0.42)
-    ks.Size = UDim2.fromScale(0.055, 0.28)
+    ks.Position = UDim2.fromScale(0.5, 0.44)
+    ks.Size = UDim2.fromScale(0.06, 0.32)
     ks.BackgroundColor3 = dark
     ks.BorderSizePixel = 0
-    ks.ZIndex = 7
+    ks.ZIndex = 6
     ks.Parent = body
-
-    return body
 end
 
 local function createLoadingScreen()
@@ -139,7 +135,7 @@ local function createLoadingScreen()
         bg.ZIndex = 1
         bg.Parent = gui
 
-        -- Image background (subtle)
+        -- Background image (full screen)
         local bgImg = Instance.new("ImageLabel")
         bgImg.Name = "BgImage"
         bgImg.Size = UDim2.fromScale(1, 1)
@@ -151,82 +147,100 @@ local function createLoadingScreen()
         bgImg.Parent = gui
         task.spawn(function()
             local preOK = pcall(function() ContentProvider:PreloadAsync({ bgImg }) end)
-            if not preOK then
+            local hasSize = false
+            pcall(function() hasSize = bgImg.ImageRectSize.X > 0 and bgImg.ImageRectSize.Y > 0 end)
+            if not preOK or not hasSize then
                 pcall(function() bgImg.Image = BG_IMAGE_ALT end)
             end
         end)
 
-        -- Logo container
-        local logoFrame = Instance.new("Frame")
-        logoFrame.Name = "LogoFrame"
-        logoFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-        logoFrame.Position = UDim2.fromScale(0.5, 0.40)
-        logoFrame.Size = UDim2.fromScale(0.24, 0.24)
-        logoFrame.BackgroundTransparency = 1
-        logoFrame.ZIndex = 4
-        logoFrame.Parent = gui
-        local aspect = Instance.new("UIAspectRatioConstraint")
-        aspect.AspectRatio = 1
-        aspect.Parent = logoFrame
+        -- ============================================
+        -- TOP ROW:  [lock icon]  SCP HUB
+        -- ============================================
+        local topBar = Instance.new("Frame")
+        topBar.Name = "TopBar"
+        topBar.AnchorPoint = Vector2.new(0.5, 0)
+        topBar.Position = UDim2.fromScale(0.5, 0.055)
+        topBar.Size = UDim2.fromScale(0.55, 0.11)
+        topBar.BackgroundTransparency = 1
+        topBar.ZIndex = 5
+        topBar.Parent = gui
 
-        Loading.Lock = makeLock(logoFrame, Color3.fromRGB(220, 40, 40), Color3.fromRGB(15, 15, 18))
+        -- Lock icon (left side of the bar)
+        local lockBox = Instance.new("Frame")
+        lockBox.Name = "LockBox"
+        lockBox.AnchorPoint = Vector2.new(1, 0.5)
+        lockBox.Position = UDim2.fromScale(0.5, 0.5)
+        lockBox.Size = UDim2.fromScale(0.28, 0.92)
+        lockBox.BackgroundTransparency = 1
+        lockBox.ZIndex = 5
+        lockBox.Parent = topBar
+        local lockAspect = Instance.new("UIAspectRatioConstraint")
+        lockAspect.AspectRatio = 1
+        lockAspect.Parent = lockBox
+        drawLockSmall(lockBox, Color3.fromRGB(220, 40, 40), Color3.fromRGB(15, 15, 18))
 
-        -- Title
-        local title = Instance.new("TextLabel")
-        title.AnchorPoint = Vector2.new(0.5, 0)
-        title.Position = UDim2.fromScale(0.5, 0.60)
-        title.Size = UDim2.fromScale(0.5, 0.055)
-        title.BackgroundTransparency = 1
-        title.Font = Enum.Font.GothamBold
-        title.Text = "SCP HUB"
-        title.TextColor3 = Color3.fromRGB(220, 40, 40)
-        title.TextScaled = true
-        title.TextStrokeTransparency = 0.4
-        title.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-        title.ZIndex = 4
-        title.Parent = gui
+        -- "SCP HUB" text (right side of the bar)
+        local topTitle = Instance.new("TextLabel")
+        topTitle.Name = "TopTitle"
+        topTitle.AnchorPoint = Vector2.new(0, 0.5)
+        topTitle.Position = UDim2.fromScale(0.53, 0.5)
+        topTitle.Size = UDim2.fromScale(0.45, 0.9)
+        topTitle.BackgroundTransparency = 1
+        topTitle.Font = Enum.Font.GothamBold
+        topTitle.Text = "SCP HUB"
+        topTitle.TextColor3 = Color3.fromRGB(220, 40, 40)
+        topTitle.TextScaled = true
+        topTitle.TextXAlignment = Enum.TextXAlignment.Left
+        topTitle.TextStrokeTransparency = 0.4
+        topTitle.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+        topTitle.ZIndex = 5
+        topTitle.Parent = topBar
 
-        -- Bar
+        -- ============================================
+        -- BOTTOM: Progress bar + percent + status
+        -- ============================================
         local barBG = Instance.new("Frame")
         barBG.AnchorPoint = Vector2.new(0.5, 0.5)
-        barBG.Position = UDim2.fromScale(0.5, 0.73)
-        barBG.Size = UDim2.fromScale(0.42, 0.012)
+        barBG.Position = UDim2.fromScale(0.5, 0.83)
+        barBG.Size = UDim2.fromScale(0.42, 0.014)
         barBG.BackgroundColor3 = Color3.fromRGB(30, 30, 34)
         barBG.BorderSizePixel = 0
-        barBG.ZIndex = 4
+        barBG.ZIndex = 5
         barBG.Parent = gui
-        local barCorner = Instance.new("UICorner") barCorner.CornerRadius = UDim.new(0, 6) barCorner.Parent = barBG
+        local bcorner = Instance.new("UICorner") bcorner.CornerRadius = UDim.new(0, 6) bcorner.Parent = barBG
 
         local bar = Instance.new("Frame")
+        bar.Name = "BarFill"
         bar.Size = UDim2.fromScale(0, 1)
         bar.BackgroundColor3 = Color3.fromRGB(200, 30, 30)
         bar.BorderSizePixel = 0
-        bar.ZIndex = 5
+        bar.ZIndex = 6
         bar.Parent = barBG
-        local barFillCorner = Instance.new("UICorner") barFillCorner.CornerRadius = UDim.new(0, 6) barFillCorner.Parent = bar
+        local fcorner = Instance.new("UICorner") fcorner.CornerRadius = UDim.new(0, 6) fcorner.Parent = bar
 
         local pct = Instance.new("TextLabel")
         pct.AnchorPoint = Vector2.new(0.5, 0)
-        pct.Position = UDim2.fromScale(0.5, 0.755)
+        pct.Position = UDim2.fromScale(0.5, 0.855)
         pct.Size = UDim2.fromScale(0.5, 0.035)
         pct.BackgroundTransparency = 1
         pct.Font = Enum.Font.Gotham
         pct.Text = "0%"
         pct.TextColor3 = Color3.fromRGB(200, 200, 200)
         pct.TextScaled = true
-        pct.ZIndex = 4
+        pct.ZIndex = 5
         pct.Parent = gui
 
         local status = Instance.new("TextLabel")
         status.AnchorPoint = Vector2.new(0.5, 0)
-        status.Position = UDim2.fromScale(0.5, 0.80)
+        status.Position = UDim2.fromScale(0.5, 0.90)
         status.Size = UDim2.fromScale(0.7, 0.03)
         status.BackgroundTransparency = 1
         status.Font = Enum.Font.Gotham
         status.Text = "Booting..."
         status.TextColor3 = Color3.fromRGB(140, 140, 140)
         status.TextScaled = true
-        status.ZIndex = 4
+        status.ZIndex = 5
         status.Parent = gui
 
         Loading.GUI = gui
@@ -291,9 +305,6 @@ local Options = Library.Options
 
 setProgress(15, "Setting up services...")
 
--- =========================================================
--- Camera watcher
--- =========================================================
 local Camera = Workspace.CurrentCamera
 Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
     if Workspace.CurrentCamera then Camera = Workspace.CurrentCamera end
@@ -304,9 +315,7 @@ task.spawn(function()
     MainUI = PlayerGui:WaitForChild("MainUI", 300)
 end)
 
--- =========================================================
 -- Network
--- =========================================================
 local RemoteEvent
 do
     local mods = ReplicatedStorage:FindFirstChild("Modules")
@@ -329,9 +338,7 @@ local function buildBuffer(str)
 end
 local BLOCK_BUF = buildBuffer("Block")
 
--- =========================================================
 -- Helpers
--- =========================================================
 local function getMyRole()
     local c = lp.Character
     local p = c and c.Parent
@@ -385,9 +392,7 @@ local firesignalF = (typeof(firesignal) == "function") and firesignal
     or rawget(getfenv(), "FireSignal")
     or rawget(getfenv(), "firesignal")
 
--- =========================================================
 -- Block firing
--- =========================================================
 local lastBlockFire = 0
 local CFG = { AutoBlockEnabled = false, WallCheck = true, SoundTrigger = true, AnimTrigger = true }
 local BLOCK_METHOD = nil
@@ -425,17 +430,12 @@ local function fireBlock()
     return fired
 end
 
--- =========================================================
--- Behead handling
--- =========================================================
 local BEHEAD_SOUND_IDS = {}
 local IGNORE_BEHEAD    = true
 local LOG_TRIGGER_IDS  = false
 _G.SCPHub_LastLoggedID = nil
 
--- =========================================================
--- M1 animations
--- =========================================================
+-- M1 hardcoded list (kept as belt-and-braces for edge cases)
 local M1_ANIM_IDS = {}
 for _, id in ipairs({
     "132298811847315","81114852524420","123825742002486","116616310968045",
@@ -450,7 +450,8 @@ for _, id in ipairs({
 setProgress(25, "Loading killer attack data...")
 
 -- =========================================================
--- Forsaken Plus style attack detection
+-- Attack detection (Forsaken Plus style)
+-- Builds ID -> attack-type map from killer config modules
 -- =========================================================
 local BLOCKABLE_ATTACKS = {
     ["slash"]=true, ["enragedslash"]=true, ["stab"]=true, ["attack"]=true,
@@ -460,6 +461,7 @@ local CUSTOM_HITBOXES = {
     ["golemslash"] = { Size = Vector3.new(6, 2, 7), Offset = CFrame.new(0, 0, -5.5) },
 }
 local ATTACK_ANIM_MAP = {}
+local ATTACK_MAP_READY = false
 
 local function collectAnimIdsInto(v, out)
     if type(v) == "string" then
@@ -493,6 +495,7 @@ local function buildAttackAnimMap()
             end
         end
     end
+    ATTACK_MAP_READY = true
 end
 task.spawn(buildAttackAnimMap)
 task.spawn(function()
@@ -500,7 +503,7 @@ task.spawn(function()
 end)
 
 -- =========================================================
--- Facing visual
+-- Facing visual (box on killer M1)
 -- =========================================================
 local FacingVisual = {
     BoxEnabled    = false,
@@ -511,7 +514,7 @@ local FacingVisual = {
     BoxMaterial   = "Neon",
     BoxTransparency = 0.9,
     BoxOutlineTransparency = 1,
-    AppearMode    = "Always",
+    AppearMode    = "M1",   -- default now M1-only
     M1FlashDuration = 0.45,
     M1FlashUntil  = setmetatable({}, { __mode = "k" }),
 
@@ -559,11 +562,19 @@ local function createCircle(killer)
     FacingVisual.circles[killer] = { adornment = adorn }
 end
 
+-- NOTE: when killer is nil (called from sliders), respect current mode by
+-- checking AppearMode. In M1 mode we shouldn't flash a box just because a
+-- slider moved -- so default to hidden when killer is nil in M1 mode.
 local function applyBoxAppearance(data, killer)
     local part = data and data.part
     local hl   = data and data.highlight
     if not part or not part.Parent then return end
-    local show = killer and boxShouldShow(killer) or FacingVisual.BoxEnabled
+    local show
+    if killer then
+        show = boxShouldShow(killer)
+    else
+        show = FacingVisual.BoxEnabled and FacingVisual.AppearMode == "Always"
+    end
     part.Color = FacingVisual.BoxColor
     part.Transparency = show and FacingVisual.BoxTransparency or 1
     local mat = Enum.Material.Neon
@@ -585,14 +596,14 @@ local function createBox(killer)
     part.Massless = true; part.CastShadow = false
     part.Material = Enum.Material.Neon
     part.Color = FacingVisual.BoxColor
-    part.Transparency = FacingVisual.BoxTransparency
+    part.Transparency = 1
     part.Size = Vector3.new(FacingVisual.BoxWidth, FacingVisual.BoxHeight, FacingVisual.BoxLength)
     part.Parent = killer
     local hl = Instance.new("Highlight")
     hl.Name = "SCPHubDetectionHighlight"
     hl.FillTransparency = 1
     hl.OutlineColor = FacingVisual.BoxColor
-    hl.OutlineTransparency = FacingVisual.BoxOutlineTransparency or 0
+    hl.OutlineTransparency = 1
     hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
     hl.Adornee = part
     hl.Parent = part
@@ -613,6 +624,7 @@ local function createBox(killer)
         applyBoxAppearance(data, killer)
     end)
 end
+
 local function ensureBoxes()
     if not KillersFolder then return end
     for _, k in ipairs(KillersFolder:GetChildren()) do
@@ -623,10 +635,7 @@ local function ensureBoxes()
     end
 end
 task.spawn(function()
-    while true do
-        task.wait(0.5)
-        pcall(function() ensureBoxes() end)
-    end
+    while true do task.wait(0.5); pcall(function() ensureBoxes() end) end
 end)
 task.spawn(function()
     while true do
@@ -651,6 +660,10 @@ task.spawn(function()
     end
 end)
 
+-- =========================================================
+-- M1 hook — uses Forsaken Plus detection (ID map built from
+-- killer configs) PLUS the hardcoded M1 fallback list.
+-- =========================================================
 local killerM1Conns = setmetatable({}, { __mode = "k" })
 local function hookKillerForM1Flash(killer)
     if not killer or not killer:IsA("Model") then return end
@@ -662,8 +675,14 @@ local function hookKillerForM1Flash(killer)
         killerM1Conns[killer] = animator.AnimationPlayed:Connect(function(track)
             local anim = track and track.Animation; if not anim then return end
             local id = tostring(anim.AnimationId):match("(%d+)")
-            if id and M1_ANIM_IDS[id] then
+            if not id then return end
+            -- Primary: dynamic map from killer configs (Forsaken Plus method)
+            -- Fallback: hardcoded M1_ANIM_IDS
+            if ATTACK_ANIM_MAP[id] or M1_ANIM_IDS[id] then
                 FacingVisual.M1FlashUntil[killer] = tick() + FacingVisual.M1FlashDuration
+                -- immediately apply so box appears the same frame
+                local data = FacingVisual.boxes[killer]
+                if data then applyBoxAppearance(data, killer) end
             end
         end)
         return true
@@ -792,9 +811,7 @@ lp.CharacterAdded:Connect(function()
     if HDT._conn then HDT._conn:Disconnect() HDT._conn = nil end
 end)
 
--- =========================================================
 -- Block check (sound method)
--- =========================================================
 local function performBlockCheck(killerModel)
     if not CFG.AutoBlockEnabled or not isSurvivor() then return end
     if hasHelplessEffect() then return end
@@ -853,9 +870,7 @@ local function performBlockCheck(killerModel)
     end
 end
 
--- =========================================================
--- Block check (Forsaken Plus animation method)
--- =========================================================
+-- Block check (animation method)
 local function performAnimationBlockCheck(killer, attackType)
     if not CFG.AutoBlockEnabled or not CFG.AnimTrigger then return end
     if not isSurvivor() then return end
@@ -960,9 +975,7 @@ local function tryAutoBlock(killerModel, soundId)
     performBlockCheck(killerModel)
 end
 
--- =========================================================
 -- TRIGGER SOUNDS
--- =========================================================
 local TRIGGER_SOUNDS = {
     ["102228729296384"]=true,["140242176732868"]=true,["112809109188560"]=true,["136323728355613"]=true,
     ["115026634746636"]=true,["84116622032112"]=true,["108907358619313"]=true,["127793641088496"]=true,
@@ -1036,9 +1049,7 @@ local function hookSound(sound)
     if sound.IsPlaying then onSoundTrigger(sound) end
 end
 
--- =========================================================
 -- DYNAMIC FOLDER TRACKER
--- =========================================================
 task.spawn(function()
     local lastKillers, lastSurvivors
     while true do
@@ -1333,9 +1344,7 @@ end)
 
 setProgress(40, "Loading aim modules...")
 
--- =========================================================
 -- Chance aimlock
--- =========================================================
 local ChanceAimbot = {
     Enabled = false, LockTime = 0.9, PredMin = 2, PredMax = 3,
     TurnLeadMult = 1.0, FireRemote = true,
@@ -1524,12 +1533,10 @@ local ESP_CFG = {
     Items      = { Enabled = false },
 }
 local ESP_TRACK = setmetatable({}, { __mode = "k" })
-
 local ESP_CAT = {
     Killers   = setmetatable({}, { __mode = "k" }),
     Survivors = setmetatable({}, { __mode = "k" }),
 }
-
 local function espGetHRP(m) return m and (m:FindFirstChild("HumanoidRootPart") or m.PrimaryPart) end
 local function espTrackTable(model)
     local t = ESP_TRACK[model]; if not t then t = {}; ESP_TRACK[model] = t end
@@ -1647,7 +1654,6 @@ local function espEnsureForModel(model, cfg)
         if t.Tracer then espUpdateTracer(model, cfg, t.Tracer) end
     elseif t.Tracer then pcall(function() t.Tracer:Destroy() end); t.Tracer = nil end
 end
-
 local function espScanCategory(folder, cfg, excludeSelf, category)
     if not folder then return end
     local catSet = ESP_CAT[category]
@@ -1668,7 +1674,6 @@ local function espScanCategory(folder, cfg, excludeSelf, category)
         end
     end
 end
-
 task.spawn(function()
     while true do
         task.wait(0.2)
@@ -1765,7 +1770,7 @@ task.spawn(function()
 end)
 
 -- =========================================================
--- AUTO GENERATOR
+-- AUTO GENERATOR (fixed to match Forsaken Plus)
 -- =========================================================
 local AUTOGEN = { Enabled = false, Interval = 1.05, MaxDistance = 10, _thread = nil }
 local function getIngameMap()
@@ -1778,17 +1783,34 @@ local function autogenFireOnce()
     local myRoot = getMyRoot()
     if not map or not myRoot then return end
     local pos = myRoot.Position
-    for _, obj in ipairs(map:GetChildren()) do
-        if (obj.Name == "Generator" or obj.Name == "FakeGenerator") and obj:IsA("Model") then
-            local prog = obj:FindFirstChild("Progress")
-            local main = obj:FindFirstChild("Main")
-            if prog and prog.Value ~= 100 and main
-                and (main.Position - pos).Magnitude <= AUTOGEN.MaxDistance then
-                local remotes = obj:FindFirstChild("Remotes")
-                local re = remotes and remotes:FindFirstChild("RE")
-                if re and re:IsA("RemoteEvent") then
-                    pcall(function() re:FireServer() end)
-                end
+
+    -- Forsaken Plus finds generators with a #Main child
+    local gens
+    pcall(function() gens = map:QueryDescendants("Model#Generator:has(#Main)") end)
+    if not gens then
+        gens = {}
+        for _, obj in ipairs(map:GetChildren()) do
+            if obj:IsA("Model") and (obj.Name == "Generator" or obj.Name == "FakeGenerator") then
+                gens[#gens+1] = obj
+            end
+        end
+    end
+
+    for _, obj in ipairs(gens) do
+        local prog = obj:FindFirstChild("Progress")
+        local main = obj:FindFirstChild("Main")
+        if prog and prog.Value ~= 100 and main
+            and (main.Position - pos).Magnitude <= AUTOGEN.MaxDistance then
+            local remotes = obj:FindFirstChild("Remotes")
+            -- Forsaken Plus: RemoteEvent is a direct child of Remotes
+            local re = remotes and remotes:FindFirstChildOfClass("RemoteEvent")
+            -- Fallback: also try a child literally named "RE"
+            if not re and remotes then
+                local r = remotes:FindFirstChild("RE")
+                if r and r:IsA("RemoteEvent") then re = r end
+            end
+            if re then
+                pcall(function() re:FireServer() end)
             end
         end
     end
@@ -1810,9 +1832,7 @@ end
 
 setProgress(55, "Loading stamina module...")
 
--- =========================================================
 -- Stamina
--- =========================================================
 local Sprinting = nil
 task.spawn(function()
     pcall(function() Sprinting = require(ReplicatedStorage.Systems.Character.Game.Sprinting) end)
@@ -1880,9 +1900,7 @@ task.spawn(function()
     stamSnapshot()
 end)
 
--- =========================================================
 -- INPUT
--- =========================================================
 if _G.SCPHubInputConn then pcall(function() _G.SCPHubInputConn:Disconnect() end); _G.SCPHubInputConn = nil end
 _G.SCPHubInputConn = UIS.InputBegan:Connect(function(input, gpe)
     if gpe then return end
@@ -1893,9 +1911,7 @@ end)
 
 setProgress(70, "Building menu...")
 
--- =========================================================
 -- OBSIDIAN UI
--- =========================================================
 local Window = Library:CreateWindow({
     Title = "SCP Hub", Footer = "v1",
     Icon = "wind",
@@ -1915,14 +1931,10 @@ pcall(function()
     })
 end)
 
--- =========================================================
--- HUB BACKGROUND IMAGE
--- Injects the loading-screen image behind the Obsidian window.
--- =========================================================
+-- Inject image behind hub
 task.spawn(function()
-    task.wait(1.2)  -- give Obsidian time to build
+    task.wait(1.2)
     local sg = nil
-    -- Try Obsidian's stored reference first
     pcall(function() sg = Library.ScreenGui end)
     if not sg then
         local containers = {}
@@ -1934,14 +1946,11 @@ task.spawn(function()
                 for _, x in ipairs(c:GetChildren()) do
                     if x:IsA("ScreenGui")
                         and x.Name ~= "SCPHubLoading"
-                        and x.Name ~= "SCPHubBg"
                         and not x:FindFirstChild("SCPHubBgImage") then
-                        -- Heuristic: has a Frame descendant whose size is large (the Obsidian window)
                         local isHub = false
                         for _, d in ipairs(x:GetDescendants()) do
                             if d:IsA("Frame") and d.AbsoluteSize.X > 400 and d.AbsoluteSize.Y > 300 then
-                                isHub = true
-                                break
+                                isHub = true; break
                             end
                         end
                         if isHub then sg = x; break end
@@ -1981,7 +1990,6 @@ end
 
 setProgress(75, "Building ESP tab...")
 
--- ESP Tab
 pcall(function()
     local L = Tabs.ESP:AddLeftGroupbox("Killer ESP")
     L:AddToggle("ESPK", { Text = "Enabled", Default = true, Callback = function(v)
@@ -1999,26 +2007,6 @@ pcall(function()
     L:AddToggle("ESPKDist",  { Text = "Distance",          Default = true,  Callback = function(v) ESP_CFG.Killers.Distance = v end })
     L:AddToggle("ESPKTracer",{ Text = "Tracer",            Default = false, Callback = function(v) ESP_CFG.Killers.Tracer = v end })
     L:AddSlider("ESPKRange", { Text = "Max Distance (studs)", Min = 100, Max = 5000, Default = 1500, Rounding = 0, Callback = function(v) ESP_CFG.Killers.MaxDistance = v end })
-    L:AddSlider("ESPKFill", { Text = "Highlight Fill Transparency", Min = 0, Max = 1, Default = 0.55, Rounding = 2, Callback = function(v)
-        ESP_CFG.Killers.FillTransparency = v
-        local kf = KillersFolder or (Workspace:FindFirstChild("Players") and Workspace.Players:FindFirstChild("Killers"))
-        if kf then
-            for _, m in ipairs(kf:GetChildren()) do
-                local t = ESP_TRACK[m]
-                if t and t.Chams and t.Chams.Parent then t.Chams.FillTransparency = v end
-            end
-        end
-    end })
-    L:AddSlider("ESPKOutline", { Text = "Highlight Outline Transparency", Min = 0, Max = 1, Default = 0, Rounding = 2, Callback = function(v)
-        ESP_CFG.Killers.OutlineTransparency = v
-        local kf = KillersFolder or (Workspace:FindFirstChild("Players") and Workspace.Players:FindFirstChild("Killers"))
-        if kf then
-            for _, m in ipairs(kf:GetChildren()) do
-                local t = ESP_TRACK[m]
-                if t and t.Chams and t.Chams.Parent then t.Chams.OutlineTransparency = v end
-            end
-        end
-    end })
 
     local R = Tabs.ESP:AddRightGroupbox("Survivor ESP")
     R:AddToggle("ESPS", { Text = "Enabled", Default = true, Callback = function(v)
@@ -2036,26 +2024,6 @@ pcall(function()
     R:AddToggle("ESPSDist",  { Text = "Distance",          Default = true,  Callback = function(v) ESP_CFG.Survivors.Distance = v end })
     R:AddToggle("ESPSTracer",{ Text = "Tracer",            Default = false, Callback = function(v) ESP_CFG.Survivors.Tracer = v end })
     R:AddSlider("ESPSRange", { Text = "Max Distance (studs)", Min = 100, Max = 5000, Default = 1500, Rounding = 0, Callback = function(v) ESP_CFG.Survivors.MaxDistance = v end })
-    R:AddSlider("ESPSFill", { Text = "Highlight Fill Transparency", Min = 0, Max = 1, Default = 0.55, Rounding = 2, Callback = function(v)
-        ESP_CFG.Survivors.FillTransparency = v
-        local sf = SurvivorsFolder or (Workspace:FindFirstChild("Players") and Workspace.Players:FindFirstChild("Survivors"))
-        if sf then
-            for _, m in ipairs(sf:GetChildren()) do
-                local t = ESP_TRACK[m]
-                if t and t.Chams and t.Chams.Parent then t.Chams.FillTransparency = v end
-            end
-        end
-    end })
-    R:AddSlider("ESPSOutline", { Text = "Highlight Outline Transparency", Min = 0, Max = 1, Default = 0, Rounding = 2, Callback = function(v)
-        ESP_CFG.Survivors.OutlineTransparency = v
-        local sf = SurvivorsFolder or (Workspace:FindFirstChild("Players") and Workspace.Players:FindFirstChild("Survivors"))
-        if sf then
-            for _, m in ipairs(sf:GetChildren()) do
-                local t = ESP_TRACK[m]
-                if t and t.Chams and t.Chams.Parent then t.Chams.OutlineTransparency = v end
-            end
-        end
-    end })
 
     local W = Tabs.ESP:AddLeftGroupbox("World")
     W:AddToggle("ESPG", { Text = "Generators", Default = false, Callback = function(v)
@@ -2160,7 +2128,7 @@ pcall(function()
             if data and data.part then applyBoxAppearance(data, nil) end
         end
     end })
-    D:AddDropdown("BoxAppear", { Text = "Appear", Values = { "Always", "Box only appear on killer M1" }, Default = 1,
+    D:AddDropdown("BoxAppear", { Text = "Appear", Values = { "Always", "Box only appear on killer M1" }, Default = 2,
         Callback = function(v)
             FacingVisual.AppearMode = (v == "Always") and "Always" or "M1"
         end })
@@ -2196,7 +2164,6 @@ end)
 
 setProgress(85, "Building aim tab...")
 
--- Aim Tab
 pcall(function()
     local L = Tabs.Aim:AddLeftGroupbox("Survivor Stun Aim")
     L:AddToggle("AimOn", { Text = "Enabled", Default = false, Callback = function(v) AIM.Enabled = v end })
@@ -2239,6 +2206,7 @@ pcall(function()
     G:AddToggle("GenOn", { Text = "Enable Auto Gen", Default = false, Callback = function(v) AUTOGEN.Enabled = v; autogenLoop() end })
     G:AddSlider("GenRange", { Text = "Range (studs)", Min = 5, Max = 30, Default = 10, Rounding = 0, Callback = function(v) AUTOGEN.MaxDistance = v end })
     G:AddSlider("GenInt",   { Text = "Interval (s)",  Min = 0.5, Max = 5,  Default = 1.05, Rounding = 2, Callback = function(v) AUTOGEN.Interval = v end })
+    G:AddLabel("Uses Forsaken Plus remote lookup.")
 end)
 
 -- HDT Tab
@@ -2284,9 +2252,7 @@ end)
 
 setProgress(90, "Loading Veeronica tab...")
 
--- =========================================================
 -- VEERONICA TAB
--- =========================================================
 pcall(function()
     local V = {
         AutoTrick=false, AutoTrickThread=nil, AutoTrickDebug=false,
@@ -2344,40 +2310,9 @@ pcall(function()
     local function veeFindChaseHighlight(c)
         if not c then return nil, "no character" end
         local h = c:FindFirstChild("Highlight")
-        if h and h:IsA("Highlight") and (h.Adornee == c or h.Adornee == nil) then
-            return h, "char-direct"
-        end
+        if h and h:IsA("Highlight") and (h.Adornee == c or h.Adornee == nil) then return h, "char-direct" end
         for _, d in ipairs(c:GetDescendants()) do
-            if d:IsA("Highlight") and (d.Adornee == c or d.Adornee == nil) then
-                return d, "char-descendant"
-            end
-        end
-        local parent = c.Parent
-        if parent then
-            for _, d in ipairs(parent:GetChildren()) do
-                if d:IsA("Highlight") and d.Adornee == c then
-                    return d, "parent-folder"
-                end
-            end
-        end
-        local hrp = c:FindFirstChild("HumanoidRootPart")
-        if hrp then
-            for _, d in ipairs(hrp:GetChildren()) do
-                if d:IsA("Highlight") then return d, "hrp" end
-            end
-        end
-        for _, d in ipairs(workspace:GetChildren()) do
-            if d:IsA("Highlight") and d.Adornee == c then
-                return d, "workspace"
-            end
-        end
-        local cam = workspace.CurrentCamera
-        if cam then
-            for _, d in ipairs(cam:GetChildren()) do
-                if d:IsA("Highlight") and d.Adornee == c then
-                    return d, "camera"
-                end
-            end
+            if d:IsA("Highlight") and (d.Adornee == c or d.Adornee == nil) then return d, "char-descendant" end
         end
         return nil, "no highlight found"
     end
@@ -2387,43 +2322,33 @@ pcall(function()
         return h ~= nil
     end
 
-    -- Invisible-box wall detection (character height)
     local function veeWallCheck()
         local myRoot = getMyRoot()
         local myChar = lp.Character
         if not myRoot or not myChar then return false, nil end
-
         local height = 5
         local okBB, _, sizeBB = pcall(function() return myChar:GetBoundingBox() end)
         if okBB and sizeBB then height = math.max(sizeBB.Y, 3) end
-
         local R = math.clamp(V.WallTrickRadius or 5, 1, 10)
         local boxSize = Vector3.new(R * 2, height, R * 2)
         local center = myRoot.Position
-
         local params = OverlapParams.new()
         params.FilterType = Enum.RaycastFilterType.Exclude
         local exclude = { myChar }
         local pf = workspace:FindFirstChild("Players")
         if pf then table.insert(exclude, pf) end
         params.FilterDescendantsInstances = exclude
-
         local parts = workspace:GetPartBoundsInBox(CFrame.new(center), boxSize, params)
-
         local nearestInst, nearestDist = nil, math.huge
         for _, p in ipairs(parts) do
             if p:IsA("BasePart") and p.CanCollide then
                 local minHoriz = math.min(p.Size.X, p.Size.Z)
                 if minHoriz > 0.05 and p.Size.Y >= minHoriz * 0.5 then
                     local d = (p.Position - center).Magnitude
-                    if d < nearestDist then
-                        nearestDist = d
-                        nearestInst = p
-                    end
+                    if d < nearestDist then nearestDist = d; nearestInst = p end
                 end
             end
         end
-
         if nearestInst then return true, nearestInst end
         return false, nil
     end
@@ -2445,16 +2370,6 @@ pcall(function()
                 end
             end
         end
-        if #targets == 0 and main then
-            for _, d in ipairs(main:GetDescendants()) do
-                if d:IsA("GuiButton") then
-                    local n = d.Name:lower()
-                    if n:find("sprint") or n:find("stam") or n:find("skate") or n == "sk8" then
-                        table.insert(targets, d)
-                    end
-                end
-            end
-        end
         for _, b in ipairs(targets) do
             if firesignalF then
                 if pcall(firesignalF, b.MouseButton1Click) then return true end
@@ -2466,21 +2381,8 @@ pcall(function()
                         pcall(function() c:Fire() end); any = true
                     end
                 end)
-                pcall(function()
-                    for _, c in pairs(getconnections(b.Activated)) do
-                        pcall(function() c:Fire() end); any = true
-                    end
-                end)
                 if any then return true end
             end
-            local ok = pcall(function()
-                local cx = b.AbsolutePosition.X + b.AbsoluteSize.X * 0.5
-                local cy = b.AbsolutePosition.Y + b.AbsoluteSize.Y * 0.5
-                VIM:SendMouseButtonEvent(cx, cy, 0, true,  game, 1)
-                task.wait(0.03)
-                VIM:SendMouseButtonEvent(cx, cy, 0, false, game, 1)
-            end)
-            if ok then return true end
         end
         return false
     end
@@ -2491,21 +2393,7 @@ pcall(function()
             task.wait(0.03)
             VIM:SendKeyEvent(false, Enum.KeyCode.Space, false, false)
         end)
-        if ok then return true end
-        if type(keypress) == "function" and type(keyrelease) == "function" then
-            pcall(function()
-                keypress(Enum.KeyCode.Space)
-                task.wait(0.03)
-                keyrelease(Enum.KeyCode.Space)
-            end)
-            return true
-        end
-        local ok2 = pcall(function()
-            VIM:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
-            task.wait(0.03)
-            VIM:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
-        end)
-        return ok2
+        return ok
     end
 
     local function veeDoTrickInput()
@@ -2532,28 +2420,17 @@ pcall(function()
             while V.AutoTrick do
                 RunService.Heartbeat:Wait()
                 if not V.AutoTrick then break end
-
                 local c = lp.Character
                 if not c or not veeIsVee() then continue end
                 if not veeIsSkating() then continue end
-
                 local hasWall, wallInst
                 if V.WallTrickUseHighlight and veeHighlighted(c) then
-                    hasWall = true
-                    wallInst = nil
+                    hasWall = true; wallInst = nil
                 else
                     hasWall, wallInst = veeWallCheck()
                 end
-
-                if not hasWall then
-                    V.WallTrickLastWall = nil
-                    continue
-                end
-
-                if wallInst and V.WallTrickLastWall == wallInst then
-                    continue
-                end
-
+                if not hasWall then V.WallTrickLastWall = nil; continue end
+                if wallInst and V.WallTrickLastWall == wallInst then continue end
                 if os.clock() - (V.WallTrickLast or 0) >= (V.WallTrickCooldown or 0.15) then
                     V.WallTrickLast = os.clock()
                     V.WallTrickLastWall = wallInst
@@ -2567,11 +2444,6 @@ pcall(function()
         veeModules()
         local val = v and 6.5 or 0.65
         if VModule then VModule.Sk8TurnControl = val end
-        pcall(function()
-            for _, t in pairs(getgc(true)) do
-                if type(t) == "table" and rawget(t, "Sk8TurnControl") ~= nil then t.Sk8TurnControl = val end
-            end
-        end)
     end
 
     local veeARInstalled = false
@@ -2587,16 +2459,6 @@ pcall(function()
                 local pn = lp.Name
                 if veeIsVee() then
                     if first == pn .. "SkateRebound" then return end
-                    if first == pn .. "StopSkate" and type(a[2]) == "table" then
-                        for _, x in ipairs(a[2]) do
-                            if typeof(x) == "Instance" then
-                                pcall(function()
-                                    RemoteEvent:FireServer(pn .. "StopSkate", { buffer.fromstring("\"Manual\"") })
-                                end)
-                                return
-                            end
-                        end
-                    end
                 end
             end
             return old(self, ...)
@@ -2628,59 +2490,6 @@ pcall(function()
                 end
             end
         end)
-    end
-
-    local function veeBypass(t)
-        if type(t) ~= "table" then return end
-        local s = t.Sk8; if type(s) ~= "table" or s.__bypassed then return end
-        local cb = s.Callback; if type(cb) ~= "function" then return end
-        s.__origCallback = cb; s.__bypassed = true
-        s.Callback = function(...)
-            local a = {...}; if a[3] == "BAD" then a[3] = nil end
-            return cb(table.unpack(a))
-        end
-    end
-    local function veeRestore(t)
-        if type(t) ~= "table" then return end
-        local s = t.Sk8; if type(s) ~= "table" or not s.__bypassed then return end
-        if s.__origCallback then s.Callback = s.__origCallback; s.__origCallback = nil end
-        s.__bypassed = nil
-    end
-    local function veeGetActor()
-        veeModules()
-        if not VUtil or type(VUtil.GetActor) ~= "function" then return nil end
-        local ok, r = pcall(VUtil.GetActor, VUtil, lp)
-        return (ok and type(r) == "table") and r or nil
-    end
-    local function veeSetEverywhere(v)
-        veeModules()
-        if v then
-            if VModule and VModule.Abilities then veeBypass(VModule.Abilities) end
-            local a = veeGetActor()
-            if a then
-                if a.Behavior and a.Behavior.Abilities then veeBypass(a.Behavior.Abilities) end
-                if a.State then a.State.InZone = true end
-            end
-            pcall(function() if VUtil then VUtil:ToggleLockForAbilityIcon("Sk8", "NoCharges", false) end end)
-            if V.Sk8EverywhereThread then pcall(task.cancel, V.Sk8EverywhereThread) end
-            V.Sk8EverywhereThread = task.spawn(function()
-                while task.wait(0.5) do
-                    if not V.Sk8Everywhere then break end
-                    if VModule and VModule.Abilities then veeBypass(VModule.Abilities) end
-                    local a = veeGetActor()
-                    if a then
-                        if a.Behavior and a.Behavior.Abilities then veeBypass(a.Behavior.Abilities) end
-                        if a.State then a.State.InZone = true end
-                    end
-                    pcall(function() if VUtil then VUtil:ToggleLockForAbilityIcon("Sk8", "NoCharges", false) end end)
-                end
-            end)
-        else
-            if V.Sk8EverywhereThread then pcall(task.cancel, V.Sk8EverywhereThread); V.Sk8EverywhereThread = nil end
-            if VModule and VModule.Abilities then veeRestore(VModule.Abilities) end
-            local a = veeGetActor()
-            if a and a.Behavior and a.Behavior.Abilities then veeRestore(a.Behavior.Abilities) end
-        end
     end
 
     local function veeAutoPhase(v)
@@ -2721,8 +2530,6 @@ pcall(function()
         Callback=function(v) V.WallTrickMode = v end })
     TR:AddToggle("VWallSkateOnly", { Text="Only While On Skate", Default=true,
         Callback=function(v) V.WallTrickRequireSkate = v end })
-    TR:AddToggle("VWallUseHighlight", { Text="Legacy Highlight Mode", Default=false,
-        Callback=function(v) V.WallTrickUseHighlight = v end })
     TR:AddToggle("VAutoTrickDebug", { Text="Auto Trick Debug", Default=false, Callback=function(v)
         V.AutoTrickDebug = v
         if not v then return end
@@ -2731,15 +2538,7 @@ pcall(function()
                 task.wait(0.5)
                 if V.AutoTrick and lp.Character then
                     local ok, hasWall, wallInst = pcall(veeWallCheck)
-                    print(("[AutoTrick] name=%s isVee=%s skating=%s wall=%s wallInst=%s lastWall=%s highlight=%s")
-                        :format(
-                            lp.Character:GetAttribute("CharacterName") or lp.Character.Name,
-                            tostring(veeIsVee()),
-                            tostring(veeIsSkating()),
-                            tostring(hasWall),
-                            tostring(wallInst),
-                            tostring(V.WallTrickLastWall),
-                            tostring(veeATDebug.result)))
+                    print(("[AutoTrick] wall=%s wallInst=%s"):format(tostring(hasWall),tostring(wallInst)))
                 end
             end
         end)
@@ -2759,16 +2558,14 @@ pcall(function()
     CS:AddSlider("VTrkCD",   { Text="Trick Cooldown", Min=0, Max=5, Default=1, Rounding=1, Callback=function(v) V.Sk8TrickCooldown=v; if V.CustomStats then veeSetStat("Sk8TrickCooldown", v) end end })
 
     local Rage = VeeTab:AddLeftGroupbox("Rage (100% ban risk)")
-    Rage:AddToggle("VEverywhere", { Text="Sk8 Everywhere", Default=false, Callback=function(v) V.Sk8Everywhere=v; veeSetEverywhere(v) end })
+    Rage:AddToggle("VEverywhere", { Text="Sk8 Everywhere", Default=false, Callback=function(v) V.Sk8Everywhere=v end })
 
     notify("SCP Hub", "Veeronica tab loaded")
 end)
 
 setProgress(95, "Finalizing UI settings...")
 
--- =========================================================
--- UI Settings (theme + save manager)
--- =========================================================
+-- UI Settings
 do
     local themeOK = pcall(function() ThemeManager:SetLibrary(Library) end)
     local saveOK  = pcall(function() SaveManager:SetLibrary(Library) end)
@@ -2781,13 +2578,8 @@ do
     if themeOK then
         pcall(function() ThemeManager:SetFolder("SCPHub") end)
     end
-
-    if saveOK then
-        pcall(function() SaveManager:BuildConfigSection(Tabs.UISet) end)
-    end
-    if themeOK then
-        pcall(function() ThemeManager:ApplyToTab(Tabs.UISet) end)
-    end
+    if saveOK then pcall(function() SaveManager:BuildConfigSection(Tabs.UISet) end) end
+    if themeOK then pcall(function() ThemeManager:ApplyToTab(Tabs.UISet) end) end
 
     local M = Tabs.UISet:AddLeftGroupbox("Menu")
     local kbOK = pcall(function()
@@ -2800,14 +2592,8 @@ do
     if kbOK and Options and Options.MenuKeybind then
         pcall(function() Library.ToggleKeybind = Options.MenuKeybind end)
     end
-
-    if saveOK then
-        pcall(function() SaveManager:LoadAutoloadConfig() end)
-    end
+    if saveOK then pcall(function() SaveManager:LoadAutoloadConfig() end) end
 end
 
--- =========================================================
--- DONE
--- =========================================================
 notify("SCP Hub", "loaded")
 finishLoading()

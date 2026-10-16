@@ -1,5 +1,6 @@
--- SCP Hub v13 — Rayfield Gen 2 · sliders step by 1
--- · All features · Box size + count editable · No loading screen
+-- SCP Hub v15 — cleaned · Rayfield Gen 2
+-- · Veeronica removed · Performance pass · Chams-only ESP
+-- · Sliders step by 1 · Full AIM/HDT/Misc features
 
 repeat task.wait() until game:IsLoaded()
 
@@ -12,12 +13,9 @@ local RunService        = game:GetService("RunService")
 local Workspace         = game:GetService("Workspace")
 local Stats             = game:GetService("Stats")
 local UIS               = game:GetService("UserInputService")
-local VIM               = game:GetService("VirtualInputManager")
 local TweenService      = game:GetService("TweenService")
-local CoreGui           = game:GetService("CoreGui")
 local Debris            = game:GetService("Debris")
 local Lighting          = game:GetService("Lighting")
-local StarterGui        = game:GetService("StarterGui")
 local TextChatService   = game:GetService("TextChatService")
 
 local lp = Players.LocalPlayer
@@ -157,7 +155,7 @@ local function fireBlock()
 end
 
 -- =========================================================
--- Box system (editable size + count)
+-- Box system
 -- =========================================================
 local BoxCfg = {
     Enabled = false, AppearMode = "M1",
@@ -165,6 +163,7 @@ local BoxCfg = {
     Width = 12, Height = 8, Length = 30,
     Transparency = 0,
     M1Boxes = 1, M1Spread = 3,
+    M1FadeTime = 1,
     Long = {},
 }
 
@@ -182,6 +181,7 @@ local function spawnM1Boxes(killer)
     local parent = ensureHitboxesFolder()
     local count = math.max(1, math.floor(BoxCfg.M1Boxes))
     local baseCF = qh.CFrame * CFrame.new(0, 0, -3.5)
+    local fadeTime = math.max(0.3, BoxCfg.M1FadeTime)
     for i = 1, count do
         local p = Instance.new("Part")
         p.Name = "SCPHubM1Box"
@@ -189,13 +189,14 @@ local function spawnM1Boxes(killer)
         p.CanCollide = false; p.CanTouch = false; p.CanQuery = false
         p.CastShadow = false; p.Massless = true
         p.Material = Enum.Material.ForceField
-        p.Color = Color3.fromRGB(0, 0, 0)
-        p.Transparency = 0.1
+        p.Color = BoxCfg.Color
+        p.Transparency = 0.15
         p.Size = Vector3.new(5.2, 6, 5.65) * 2.2
-        local offset = (i - (count + 1) / 2) * BoxCfg.M1Spread
-        p.CFrame = baseCF * CFrame.new(offset, 0, 0)
+        p.CFrame = baseCF * CFrame.new((i - (count + 1) / 2) * BoxCfg.M1Spread, 0, 0)
         p.Parent = parent
-        Debris:AddItem(p, 0.4)
+        TweenService:Create(p, TweenInfo.new(fadeTime, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+            { Transparency = 1 }):Play()
+        Debris:AddItem(p, fadeTime + 0.1)
     end
 end
 
@@ -218,6 +219,9 @@ local function applyLongBoxAppearance(data)
         hl.OutlineTransparency = show and 0 or 1
         hl.FillTransparency = 1
     end
+end
+local function refreshAllLongBoxes()
+    for _, data in pairs(BoxCfg.Long) do applyLongBoxAppearance(data) end
 end
 local function createLongBox(killer)
     if not killer or not killer:IsA("Model") then return end
@@ -263,7 +267,6 @@ local function ensureBoxes()
         end
     end
 end
-task.spawn(function() while true do task.wait(0.5); pcall(ensureBoxes) end end)
 
 local killerM1Conns = setmetatable({}, { __mode = "k" })
 local function hookKillerForM1(killer)
@@ -278,12 +281,7 @@ local function hookKillerForM1(killer)
             local anim = track and track.Animation; if not anim then return end
             local id = tostring(anim.AnimationId):match("(%d+)")
             if not id or not ATTACK_ANIM_MAP[id] then return end
-            if BoxCfg.AppearMode == "M1" then
-                spawnM1Boxes(killer)
-            else
-                local d = BoxCfg.Long[killer]
-                if d then applyLongBoxAppearance(d) end
-            end
+            if BoxCfg.AppearMode == "M1" then spawnM1Boxes(killer) end
         end)
         return true
     end
@@ -406,6 +404,7 @@ end
 
 local BEHEAD_IDS = {}
 local IGNORE_BEHEAD = true
+local LOG_IDS = false
 _G.SCPHub_LastLoggedID = nil
 local lastAutoBlock = setmetatable({}, { __mode = "k" })
 local function tryAutoBlock(killer, soundId)
@@ -455,22 +454,23 @@ local function onSoundTrigger(sound)
     local kf = KillersFolder or (Workspace:FindFirstChild("Players") and Workspace.Players:FindFirstChild("Killers"))
     if not kf or anc.Parent ~= kf then return end
     _G.SCPHub_LastLoggedID = id
+    if LOG_IDS then print("[SCP Hub] Sound: " .. id .. " | Killer: " .. anc.Name) end
     tryAutoBlock(anc, id)
 end
 local function hookSound(sound)
     if hookedSounds[sound] then return end
     hookedSounds[sound] = true
-    local c1 = sound.Played:Connect(function() onSoundTrigger(sound) end)
-    local c2 = sound:GetPropertyChangedSignal("IsPlaying"):Connect(function()
-        if sound.IsPlaying then onSoundTrigger(sound) end
-    end)
+    local conn = sound.Played:Connect(function() onSoundTrigger(sound) end)
     sound.Destroying:Once(function()
         hookedSounds[sound] = nil; lastSoundFire[sound] = nil
-        pcall(function() c1:Disconnect() end); pcall(function() c2:Disconnect() end)
+        pcall(function() conn:Disconnect() end)
     end)
     if sound.IsPlaying then onSoundTrigger(sound) end
 end
 
+-- =========================================================
+-- Combined folder tracker + box ensure loop (merged for perf)
+-- =========================================================
 task.spawn(function()
     local lastK, lastS
     while true do
@@ -500,86 +500,51 @@ task.spawn(function()
                     end
                 end)
             end
+            if kf then ensureBoxes() end
         end
     end
 end)
 
 -- =========================================================
--- ESP
+-- ESP — Chams only
 -- =========================================================
 local ESP_CFG = {
-    Killers   = { Enabled=true, Box=true, Chams=true, Name=true, Distance=true,
-                  FillColor=Color3.fromRGB(255,40,40), OutlineColor=Color3.new(1,1,1),
-                  TextColor=Color3.fromRGB(255,200,200), MaxDistance=1500,
-                  FillTransparency=1, OutlineTransparency=0 },
-    Survivors = { Enabled=true, Box=true, Chams=true, Name=true, Distance=true,
-                  FillColor=Color3.fromRGB(40,255,90), OutlineColor=Color3.new(1,1,1),
-                  TextColor=Color3.fromRGB(200,255,200), MaxDistance=1500,
-                  FillTransparency=1, OutlineTransparency=0 },
-    Generators = { Enabled=false },
-    Items      = { Enabled=false },
+    Killers   = { Enabled=true, FillColor=Color3.fromRGB(255,40,40),
+                  OutlineColor=Color3.new(1,1,1), FillTransparency=0.55, OutlineTransparency=0 },
+    Survivors = { Enabled=true, FillColor=Color3.fromRGB(40,255,90),
+                  OutlineColor=Color3.new(1,1,1), FillTransparency=0.55, OutlineTransparency=0 },
 }
 local ESP_TRACK = setmetatable({}, { __mode = "k" })
-local function espHRP(m) return m and (m:FindFirstChild("HumanoidRootPart") or m.PrimaryPart) end
+
 local function espClear(m)
     local t = ESP_TRACK[m]; if not t then return end
     for _, o in pairs(t) do if o then pcall(function() o:Destroy() end) end end
     ESP_TRACK[m] = nil
 end
+
 local function espEnsure(m, cfg)
     if not m or not m.Parent then espClear(m); return end
-    local hrp = espHRP(m); if not hrp then espClear(m); return end
     local t = ESP_TRACK[m]; if not t then t = {}; ESP_TRACK[m] = t end
-    if t.Box and not t.Box.Parent then t.Box = nil end
     if t.Chams and not t.Chams.Parent then t.Chams = nil end
-    if t.BB and not t.BB.Parent then t.BB = nil end
-    if cfg.Box then
-        if not t.Box then
-            t.Box = Instance.new("BoxHandleAdornment")
-            t.Box.Adornee = hrp; t.Box.AlwaysOnTop = true; t.Box.ZIndex = 1
-            t.Box.Size = Vector3.new(2.2, 5.5, 2.2); t.Box.Transparency = 0.4
-            t.Box.Parent = hrp
-        end
-        t.Box.Color3 = cfg.OutlineColor
-    elseif t.Box then pcall(function() t.Box:Destroy() end); t.Box = nil end
-    if cfg.Chams then
+    if cfg.Enabled then
         if not t.Chams then
             t.Chams = Instance.new("Highlight")
-            t.Chams.Adornee = m; t.Chams.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+            t.Chams.Adornee = m
+            t.Chams.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
             t.Chams.Parent = m
         end
         t.Chams.FillColor = cfg.FillColor
         t.Chams.OutlineColor = cfg.OutlineColor
         t.Chams.FillTransparency = cfg.FillTransparency
         t.Chams.OutlineTransparency = cfg.OutlineTransparency
-    elseif t.Chams then pcall(function() t.Chams:Destroy() end); t.Chams = nil end
-    if cfg.Name or cfg.Distance then
-        if not t.BB then
-            local head = m:FindFirstChild("Head") or hrp
-            t.BB = Instance.new("BillboardGui")
-            t.BB.Adornee = head; t.BB.Size = UDim2.new(0,200,0,50)
-            t.BB.StudsOffset = Vector3.new(0,3,0); t.BB.AlwaysOnTop = true
-            t.BB.MaxDistance = cfg.MaxDistance; t.BB.Parent = head
-            local l = Instance.new("TextLabel")
-            l.Name = "L"; l.BackgroundTransparency = 1
-            l.Size = UDim2.new(1,0,1,0); l.Font = Enum.Font.SourceSansBold
-            l.TextScaled = true; l.TextStrokeTransparency = 0.3
-            l.TextStrokeColor3 = Color3.new(0,0,0); l.Text = ""; l.Parent = t.BB
-        end
-        local l = t.BB:FindFirstChild("L")
-        if l then
-            local mr = getMyRoot()
-            local dist = mr and (hrp.Position - mr.Position).Magnitude or 0
-            local parts = {}
-            if cfg.Name then table.insert(parts, m.Name) end
-            if cfg.Distance then table.insert(parts, "["..math.floor(dist).." studs]") end
-            l.Text = table.concat(parts, "\n"); l.TextColor3 = cfg.TextColor
-        end
-    elseif t.BB then pcall(function() t.BB:Destroy() end); t.BB = nil end
+    elseif t.Chams then
+        pcall(function() t.Chams:Destroy() end); t.Chams = nil
+    end
 end
+
 task.spawn(function()
     while true do
-        task.wait(0.25)
+        task.wait(0.3)
         pcall(function()
             if ESP_CFG.Killers.Enabled then
                 local kf = KillersFolder or (Workspace:FindFirstChild("Players") and Workspace.Players:FindFirstChild("Killers"))
@@ -592,6 +557,9 @@ task.spawn(function()
                 if sf then for _, m in ipairs(sf:GetChildren()) do
                     if m:IsA("Model") and m ~= lp.Character then espEnsure(m, ESP_CFG.Survivors) end
                 end end
+            end
+            for m in pairs(ESP_TRACK) do
+                if not m.Parent then espClear(m) end
             end
         end)
     end
@@ -783,7 +751,7 @@ HDT_Trigger = function(force)
 end
 
 -- =========================================================
--- AIM (Survivor Stun)
+-- AIM (Survivor Stun + Chance Aimlock)
 -- =========================================================
 local Camera = Workspace.CurrentCamera
 Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
@@ -791,7 +759,8 @@ Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
 end)
 
 local AIM = { Enabled=false, AimMode="Camera", Smooth=1, PredictMode="Both",
-    PredictLead=0, PingMult=1, CurrentAbility=nil, CachedTargetHRP=nil, _aimUntil=0 }
+    PredictLead=0.15, PingMult=1, LockTime=1.5,
+    CurrentAbility=nil, CachedTargetHRP=nil, _aimUntil=0 }
 local PING_ABILITIES = { AimGun=true, GunFire=true, GunExplode=true, GunFail=true }
 local function getPing()
     local ok, v = pcall(function() return lp:GetNetworkPing() end)
@@ -831,12 +800,12 @@ local function predictHRP(hrp)
     local velLead, pingLead = 0, 0
     if AIM.PredictMode == "Velocity" or AIM.PredictMode == "Both" then velLead = AIM.PredictLead end
     if isPingAbility(AIM.CurrentAbility) and (AIM.PredictMode == "Ping" or AIM.PredictMode == "Both") then
-        pingLead = math.clamp(getPing() * 0.5 * AIM.PingMult, 0, 0.5)
+        pingLead = math.clamp(getPing() * 0.5 * AIM.PingMult, 0, 0.75)
     end
     return hrp.Position + vel * math.clamp(velLead + pingLead, 0, 0.75)
 end
 local function AimFor(duration, abilityName)
-    AIM._aimUntil = tick() + (duration or 1)
+    AIM._aimUntil = tick() + (duration or AIM.LockTime or 1)
     AIM.CurrentAbility = abilityName
 end
 local autoRotSaved = nil
@@ -877,7 +846,7 @@ local TRIGGER_WINDOW = 0.18
 local STUN_ANIMS = {}
 local STUN_BY_ABILITY = {}
 local GUEST_PUNCH_ANIMS = { ["126830014841198"]="Punch", ["126355327951215"]="Punch", ["121086746534252"]="Punch" }
-local AbilityHook = { Enabled=true, Cooldown=1, LockMultiplier=1, _lastFire=0, _animConn=nil, _registered=0, _lastName="", _lastSkin="" }
+local AbilityHook = { Enabled=true, Cooldown=1, _lastFire=0, _animConn=nil, _registered=0, _lastName="", _lastSkin="" }
 local function registerGuestPunchAnims()
     local lock = ABILITY_LOCKS.Punch or DEFAULT_LOCK
     local aimPart = ABILITY_AIM_PART.Punch or "Head"
@@ -955,7 +924,7 @@ local function bindAnimWatch()
         local now = tick()
         if now - (AbilityHook._lastFire or 0) < (AbilityHook.Cooldown or 1) then return end
         AbilityHook._lastFire = now
-        AimFor(info.Lock * (AbilityHook.LockMultiplier or 1), info.Ability)
+        AimFor(AIM.LockTime or 1, info.Ability)
     end)
 end
 lp.CharacterAdded:Connect(function() task.wait(0.4); loadCharacterAnims(); bindAnimWatch() end)
@@ -1018,12 +987,10 @@ RunService:BindToRenderStep("SCPHubAim", Enum.RenderPriority.Camera.Value + 1, f
     if tick() >= (AIM._aimUntil or 0) then AIM.CurrentAbility = nil end
 end)
 
--- =========================================================
 -- Chance Aimlock
--- =========================================================
 local ChanceAimbot = {
     Enabled=false, LockTime=1, PredMin=2, PredMax=3,
-    TurnLeadMult=1, FireRemote=true,
+    TurnLeadMult=1,
     _isLocking=false, _lockUntil=0, _currentTarget=nil,
     _lastTrigger=0, _hooked={}, _velHistory={},
 }
@@ -1108,6 +1075,28 @@ local function chanceStartAimlock()
     ChanceAimbot._velHistory = {}
     for _ = 1, 6 do chanceDoAimlock(root) end
 end
+local function chanceHookButton(btn)
+    if not btn or ChanceAimbot._hooked[btn] then return end
+    if not btn:IsA("GuiButton") then return end
+    local name = string.lower(btn.Name or "")
+    if not (name:find("shoot") or name:find("flint") or name:find("gun") or name:find("oneshot")) then return end
+    ChanceAimbot._hooked[btn] = true
+    btn.MouseButton1Click:Connect(function()
+        if ChanceAimbot.Enabled then chanceStartAimlock() end
+    end)
+end
+local function chanceScanButtons()
+    if not PlayerGui then return end
+    for _, b in ipairs(PlayerGui:GetDescendants()) do
+        pcall(chanceHookButton, b)
+    end
+end
+task.spawn(function()
+    while true do
+        if ChanceAimbot.Enabled then pcall(chanceScanButtons); task.wait(0.4)
+        else task.wait(0.5) end
+    end
+end)
 RunService.RenderStepped:Connect(function()
     if not ChanceAimbot.Enabled or not ChanceAimbot._isLocking then return end
     local now = os.clock()
@@ -1126,220 +1115,30 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- =========================================================
--- Veeronica
+-- Misc (event-driven, no tick loop)
 -- =========================================================
-local V = {
-    AutoTrick=false, AutoTrickThread=nil,
-    SkateControl=false, AntiRebound=false,
-    UnlimitedSk8=false, AutoFarmSk8=false, AutoFarmSk8Started=false, CustomStats=false,
-    Sk8Everywhere=false, AutoPhase=false, AutoPhaseThread=nil,
-    Sk8Speed=1, Sk8TrickSpeed=1, Sk8BumpPower=12, Sk8TrickStamina=10, Sk8TrickCooldown=1,
-    WallTrickRadius=5, WallTrickCooldown=1, WallTrickLast=0, WallTrickMode="Key",
-    WallTrickRequireSkate=true, WallTrickLastWall=nil,
-}
-local VModule, VUtil
-local function veeModules()
-    local assets = ReplicatedStorage:FindFirstChild("Assets"); if not assets then return end
-    if not VModule then pcall(function() VModule = require(assets.Survivors.Veeronica.Behavior) end) end
-    if not VUtil then pcall(function() VUtil = require(ReplicatedStorage.Modules.Utilities.Util) end) end
-end
-local function veeSetStat(k, val)
-    if VModule then VModule[k] = val end
-    pcall(function()
-        for _, t in pairs(getgc(true)) do
-            if type(t) == "table" and rawget(t, "DisplayName") == "Veeronica" then t[k] = val end
-        end
-    end)
-end
-local function veeApplyStats()
-    if not V.CustomStats then return end
-    veeSetStat("Sk8Speed", V.Sk8Speed); veeSetStat("Sk8SpeedExhaust", V.Sk8Speed)
-    veeSetStat("Sk8TrickAirborneSpeed", V.Sk8TrickSpeed)
-    veeSetStat("Sk8BumpPower", V.Sk8BumpPower); veeSetStat("Sk8BumpChargedPower", V.Sk8BumpPower)
-    veeSetStat("Sk8TrickStamina", V.Sk8TrickStamina); veeSetStat("Sk8TrickStaminaNerfed", V.Sk8TrickStamina)
-    veeSetStat("Sk8TrickCooldown", V.Sk8TrickCooldown)
-end
-local function veeResetStats()
-    veeSetStat("Sk8Speed", 1); veeSetStat("Sk8SpeedExhaust", 1)
-    veeSetStat("Sk8TrickAirborneSpeed", 1)
-    veeSetStat("Sk8BumpPower", 12); veeSetStat("Sk8BumpChargedPower", 12)
-    veeSetStat("Sk8TrickStamina", 10); veeSetStat("Sk8TrickStaminaNerfed", 10)
-    veeSetStat("Sk8TrickCooldown", 1)
-end
-local function veeIsVee()
-    local c = lp.Character; if not c then return false end
-    local name = c:GetAttribute("CharacterName") or c.Name
-    return name == "Veeronica"
-end
-local function veeKillers()
-    if KillersFolder then return KillersFolder end
-    local p = workspace:FindFirstChild("Players")
-    return p and p:FindFirstChild("Killers")
-end
-local function veeWallCheck()
-    local mr = getMyRoot()
-    local myChar = lp.Character
-    if not mr or not myChar then return false, nil end
-    local height = 5
-    local okBB, _, sizeBB = pcall(function() return myChar:GetBoundingBox() end)
-    if okBB and sizeBB then height = math.max(sizeBB.Y, 3) end
-    local R = math.clamp(V.WallTrickRadius or 5, 1, 10)
-    local boxSize = Vector3.new(R * 2, height, R * 2)
-    local center = mr.Position
-    local params = OverlapParams.new()
-    params.FilterType = Enum.RaycastFilterType.Exclude
-    local exclude = { myChar }
-    local pf = workspace:FindFirstChild("Players")
-    if pf then table.insert(exclude, pf) end
-    params.FilterDescendantsInstances = exclude
-    local parts = workspace:GetPartBoundsInBox(CFrame.new(center), boxSize, params)
-    local nearestInst, nearestDist = nil, math.huge
-    for _, p in ipairs(parts) do
-        if p:IsA("BasePart") and p.CanCollide then
-            local minHoriz = math.min(p.Size.X, p.Size.Z)
-            if minHoriz > 0.05 and p.Size.Y >= minHoriz * 0.5 then
-                local d = (p.Position - center).Magnitude
-                if d < nearestDist then nearestDist = d; nearestInst = p end
-            end
-        end
-    end
-    if nearestInst then return true, nearestInst end
-    return false, nil
-end
-local function veeFireStamButton()
-    if not PlayerGui then return false end
-    local targets = {}
-    local main = PlayerGui:FindFirstChild("MainUI")
-    if main then
-        for _, n in ipairs({ "SprintingButton", "StaminaButton", "SprintButton" }) do
-            local b = main:FindFirstChild(n)
-            if b and b:IsA("GuiButton") then table.insert(targets, b) end
-        end
-        local ac = main:FindFirstChild("AbilityContainer")
-        if ac then
-            for _, n in ipairs({ "Sprint", "Stamina", "Sk8", "Skate" }) do
-                local b = ac:FindFirstChild(n)
-                if b and b:IsA("GuiButton") then table.insert(targets, b) end
-            end
-        end
-    end
-    for _, b in ipairs(targets) do
-        if firesignalF and pcall(firesignalF, b.MouseButton1Click) then return true end
-    end
-    return false
-end
-local function veePressJump()
-    return pcall(function()
-        VIM:SendKeyEvent(true, Enum.KeyCode.Space, false, false)
-        task.wait(0.03)
-        VIM:SendKeyEvent(false, Enum.KeyCode.Space, false, false)
-    end)
-end
-local function veeDoTrickInput()
-    local fired = false
-    if V.WallTrickMode == "Button" or V.WallTrickMode == "Both" then
-        fired = veeFireStamButton()
-    end
-    if V.WallTrickMode == "Key" or V.WallTrickMode == "Both" or not fired then
-        pcall(veePressJump)
+local Misc_HideInjury = false
+local Misc_DisableBlindness = false
+
+local function applyInjuryTo(inst)
+    if inst.Name == "redFlash" or inst.Name == "injuredVignette" then
+        pcall(function() inst.Visible = not Misc_HideInjury end)
     end
 end
-local function veeIsSkating()
-    if not V.WallTrickRequireSkate then return true end
-    local c = lp.Character; if not c then return false end
-    local hrp = c:FindFirstChild("HumanoidRootPart"); if not hrp then return false end
-    return hrp:FindFirstChild("SkatePointer") ~= nil
+local function applyBlindnessTo(inst)
+    if inst.Name == "BlindnessBlur" and inst:IsA("BlurEffect") then
+        pcall(function() inst.Enabled = not Misc_DisableBlindness end)
+    elseif inst.Name == "HealthDesaturation" then
+        pcall(function() inst.Enabled = not Misc_HideInjury end)
+    end
 end
-local function veeAutoTrickStart()
-    if V.AutoTrickThread then pcall(task.cancel, V.AutoTrickThread); V.AutoTrickThread = nil end
-    if not V.AutoTrick then return end
-    V.AutoTrickThread = task.spawn(function()
-        while V.AutoTrick do
-            RunService.Heartbeat:Wait()
-            if not V.AutoTrick then break end
-            local c = lp.Character
-            if not c or not veeIsVee() then continue end
-            if not veeIsSkating() then continue end
-            local hasWall, wallInst = veeWallCheck()
-            if not hasWall then V.WallTrickLastWall = nil; continue end
-            if wallInst and V.WallTrickLastWall == wallInst then continue end
-            if os.clock() - (V.WallTrickLast or 0) >= (V.WallTrickCooldown or 0.15) then
-                V.WallTrickLast = os.clock()
-                V.WallTrickLastWall = wallInst
-                pcall(veeDoTrickInput)
-            end
-        end
-    end)
-end
-local function veeSkateCtrl(v)
-    veeModules()
-    local val = v and 6.5 or 0.65
-    if VModule then VModule.Sk8TurnControl = val end
-end
-local veeARInstalled = false
-local function veeInstallAR()
-    if veeARInstalled or not hookmetamethod or not getnamecallmethod then return end
-    veeARInstalled = true
-    local old
-    old = hookmetamethod(game, "__namecall", function(self, ...)
-        if not V.AntiRebound then return old(self, ...) end
-        if getnamecallmethod() == "FireServer" and self == RemoteEvent then
-            local a = {...}
-            local first = tostring(a[1] or "")
-            if veeIsVee() and first == lp.Name .. "SkateRebound" then return end
-        end
-        return old(self, ...)
-    end)
-end
-local veeUSk8 = false
-local function veeInstallUSk8()
-    if veeUSk8 then return end
-    veeUSk8 = true
-    RunService.Heartbeat:Connect(function()
-        if not V.UnlimitedSk8 or not Sprinting then return end
-        local c = lp.Character; if not c then return end
-        local hrp = c:FindFirstChild("HumanoidRootPart"); if not hrp then return end
-        if hrp:FindFirstChild("SkatePointer") then Sprinting.Stamina = Sprinting.MaxStamina end
-    end)
-end
-local function veeFarmStart()
-    if V.AutoFarmSk8Started then return end
-    V.AutoFarmSk8Started = true
-    task.spawn(function()
-        while true do
-            if V.AutoFarmSk8 and RemoteEvent then
-                pcall(function() RemoteEvent:FireServer(lp.Name .. "SkateTrick", {}) end)
-                task.wait(0.5)
-            else
-                task.wait(0.1)
-            end
-        end
-    end)
-end
-local function veeAutoPhase(v)
-    if V.AutoPhaseThread then pcall(task.cancel, V.AutoPhaseThread); V.AutoPhaseThread = nil end
-    if not v then return end
-    local Network
-    pcall(function() Network = require(ReplicatedStorage.Modules.Network.Network) end)
-    V.AutoPhaseThread = task.spawn(function()
-        while task.wait(0.5) do
-            if not V.AutoPhase then break end
-            if not Network then pcall(function() Network = require(ReplicatedStorage.Modules.Network.Network) end) end
-            local kf = veeKillers()
-            if Network and veeIsVee() and kf then
-                for _, k in ipairs(kf:GetChildren()) do
-                    if not V.AutoPhase then break end
-                    local h = k:FindFirstChildOfClass("Humanoid")
-                    if h and h.Health > 0 then
-                        pcall(function()
-                            Network:FireServerConnection(lp.Name .. "SkatePhase", "REMOTE_EVENT", k)
-                        end)
-                        task.wait(3.6)
-                    end
-                end
-            end
-        end
-    end)
+
+Lighting.ChildAdded:Connect(applyBlindnessTo)
+PlayerGui.DescendantAdded:Connect(applyInjuryTo)
+
+local function reapplyMisc()
+    for _, v in ipairs(Lighting:GetDescendants()) do applyBlindnessTo(v) end
+    for _, v in ipairs(PlayerGui:GetDescendants()) do applyInjuryTo(v) end
 end
 
 -- =========================================================
@@ -1347,31 +1146,21 @@ end
 -- =========================================================
 local Window = Rayfield:CreateWindow({
     name = "SCP Hub",
-    subtitle = "v13 · Rayfield Gen2",
+    subtitle = "v15 · Cleaned",
     sidebarLayout = true,
     configuration = { autoSave = true, autoLoad = true, fileName = "SCPHub" },
 })
 
--- ESP Tab
+-- ESP Tab (Chams only)
 local ESPTab = Window:CreateTab({ name = "ESP", icon = 93364949241311 })
-ESPTab:CreateSection("Killer ESP")
-ESPTab:CreateToggle({ name = "Killer ESP Enabled", default = true, callback = function(v) ESP_CFG.Killers.Enabled = v end })
-ESPTab:CreateToggle({ name = "Killer Box", default = true, callback = function(v) ESP_CFG.Killers.Box = v end })
-ESPTab:CreateToggle({ name = "Killer Chams", default = true, callback = function(v) ESP_CFG.Killers.Chams = v end })
-ESPTab:CreateToggle({ name = "Killer Name", default = true, callback = function(v) ESP_CFG.Killers.Name = v end })
-ESPTab:CreateToggle({ name = "Killer Distance", default = true, callback = function(v) ESP_CFG.Killers.Distance = v end })
-ESPTab:CreateSection("Survivor ESP")
-ESPTab:CreateToggle({ name = "Survivor ESP Enabled", default = true, callback = function(v) ESP_CFG.Survivors.Enabled = v end })
-ESPTab:CreateToggle({ name = "Survivor Box", default = true, callback = function(v) ESP_CFG.Survivors.Box = v end })
-ESPTab:CreateToggle({ name = "Survivor Chams", default = true, callback = function(v) ESP_CFG.Survivors.Chams = v end })
-ESPTab:CreateToggle({ name = "Survivor Name", default = true, callback = function(v) ESP_CFG.Survivors.Name = v end })
-ESPTab:CreateToggle({ name = "Survivor Distance", default = true, callback = function(v) ESP_CFG.Survivors.Distance = v end })
-ESPTab:CreateSection("World")
-ESPTab:CreateToggle({ name = "Generator ESP", default = false, callback = function(v) ESP_CFG.Generators.Enabled = v end })
-ESPTab:CreateToggle({ name = "Item ESP", default = false, callback = function(v) ESP_CFG.Items.Enabled = v end })
-ESPTab:CreateButton({ name = "Clear All ESP", callback = function()
-    for m in pairs(ESP_TRACK) do espClear(m) end
-end })
+ESPTab:CreateSection("Killer Chams")
+ESPTab:CreateToggle({ name = "Enabled", default = true, callback = function(v) ESP_CFG.Killers.Enabled = v end })
+ESPTab:CreateColorPicker({ name = "Fill Color", color = Color3.fromRGB(255, 40, 40), callback = function(c) ESP_CFG.Killers.FillColor = c end })
+ESPTab:CreateSlider({ name = "Fill Transparency", min = 0, max = 1, default = 1, increment = 1, callback = function(v) ESP_CFG.Killers.FillTransparency = v end })
+ESPTab:CreateSection("Survivor Chams")
+ESPTab:CreateToggle({ name = "Enabled", default = true, callback = function(v) ESP_CFG.Survivors.Enabled = v end })
+ESPTab:CreateColorPicker({ name = "Fill Color", color = Color3.fromRGB(40, 255, 90), callback = function(c) ESP_CFG.Survivors.FillColor = c end })
+ESPTab:CreateSlider({ name = "Fill Transparency", min = 0, max = 1, default = 1, increment = 1, callback = function(v) ESP_CFG.Survivors.FillTransparency = v end })
 
 -- Auto Block Tab
 local ABTab = Window:CreateTab({ name = "Auto Block", icon = 93364949241311 })
@@ -1383,6 +1172,7 @@ ABTab:CreateToggle({ name = "Wall Check", default = true, callback = function(v)
 ABTab:CreateButton({ name = "Block Now", callback = function() task.spawn(fireBlock) end })
 ABTab:CreateSection("Behead")
 ABTab:CreateToggle({ name = "Ignore Behead Sounds", default = true, callback = function(v) IGNORE_BEHEAD = v end })
+ABTab:CreateToggle({ name = "Log Sound IDs", default = false, callback = function(v) LOG_IDS = v end })
 ABTab:CreateButton({ name = "Mark Last as Behead", callback = function()
     if _G.SCPHub_LastLoggedID then
         BEHEAD_IDS[_G.SCPHub_LastLoggedID] = true
@@ -1402,15 +1192,19 @@ BoxTab:CreateDropdown({ name = "Appear Mode", options = { "M1", "Always" }, defa
     if v == "Always" then task.spawn(ensureBoxes)
     else for k in pairs(BoxCfg.Long) do destroyLongBox(k) end end
 end })
-BoxTab:CreateSection("M1 Boxes (FP-style)")
+BoxTab:CreateColorPicker({ name = "Box Color", color = Color3.fromRGB(255, 60, 60), callback = function(c)
+    BoxCfg.Color = c
+    refreshAllLongBoxes()
+end })
+BoxTab:CreateSection("M1 Boxes")
 BoxTab:CreateSlider({ name = "Boxes per M1", min = 1, max = 10, default = 1, increment = 1, callback = function(v) BoxCfg.M1Boxes = v end })
 BoxTab:CreateSlider({ name = "Spread", min = 0, max = 20, default = 3, increment = 1, callback = function(v) BoxCfg.M1Spread = v end })
-BoxTab:CreateSection("Always Box (SCP-Hub-style)")
+BoxTab:CreateSlider({ name = "Fade Time (0.1s steps)", min = 1, max = 30, default = 10, increment = 1, callback = function(v) BoxCfg.M1FadeTime = v / 10 end })
+BoxTab:CreateSection("Always Box")
 BoxTab:CreateSlider({ name = "Width", min = 1, max = 60, default = 12, increment = 1, callback = function(v) BoxCfg.Width = v end })
 BoxTab:CreateSlider({ name = "Length", min = 1, max = 120, default = 30, increment = 1, callback = function(v) BoxCfg.Length = v end })
 BoxTab:CreateSlider({ name = "Height", min = 1, max = 30, default = 8, increment = 1, callback = function(v) BoxCfg.Height = v end })
 BoxTab:CreateSlider({ name = "Transparency", min = 0, max = 1, default = 0, increment = 1, callback = function(v) BoxCfg.Transparency = v end })
-BoxTab:CreateColorPicker({ name = "Color", color = Color3.fromRGB(255,60,60), callback = function(c) BoxCfg.Color = c end })
 
 -- Gen Tab
 local GenTab = Window:CreateTab({ name = "Gen", icon = 93364949241311 })
@@ -1431,6 +1225,9 @@ HDT_Tab:CreateToggle({ name = "Enabled", default = false, callback = function(v)
 HDT_Tab:CreateToggle({ name = "Auto on Block", default = true, callback = function(v) HDT.AutoTrigger = v end })
 HDT_Tab:CreateSlider({ name = "Speed", min = 2, max = 40, default = 12, increment = 1, callback = function(v) HDT.Speed = v end })
 HDT_Tab:CreateSlider({ name = "Stop Distance", min = 1, max = 10, default = 2, increment = 1, callback = function(v) HDT.StopDistance = v end })
+HDT_Tab:CreateSlider({ name = "Drag Duration (0.1s)", min = 1, max = 30, default = 4, increment = 1, callback = function(v) HDT.DragDuration = v / 10 end })
+HDT_Tab:CreateSlider({ name = "Cooldown", min = 1, max = 60, default = 27, increment = 1, callback = function(v) HDT.Cooldown = v end })
+HDT_Tab:CreateSlider({ name = "Max Range", min = 10, max = 120, default = 40, increment = 1, callback = function(v) HDT.MaxRange = v end })
 HDT_Tab:CreateButton({ name = "Trigger Now (Q)", callback = function() task.spawn(function() pcall(function() HDT_Trigger(true) end) end) end })
 
 -- Aim Tab
@@ -1439,35 +1236,35 @@ AimTab:CreateSection("Survivor Stun Aim")
 AimTab:CreateToggle({ name = "Enabled", default = false, callback = function(v) AIM.Enabled = v end })
 AimTab:CreateToggle({ name = "Aim on Stun", default = true, callback = function(v) AbilityHook.Enabled = v end })
 AimTab:CreateDropdown({ name = "Aim Mode", options = {"Camera","HRP","HRP+Camera"}, default = "Camera", callback = function(v) AIM.AimMode = v end })
-AimTab:CreateDropdown({ name = "Prediction", options = {"Off","Ping","Velocity","Both"}, default = "Both", callback = function(v) AIM.PredictMode = v end })
+AimTab:CreateSlider({ name = "Lock Time (0.1s steps)", min = 3, max = 50, default = 15, increment = 1, callback = function(v) AIM.LockTime = v / 10 end })
+AimTab:CreateSection("Prediction")
+AimTab:CreateDropdown({ name = "Prediction Mode", options = {"Off","Ping","Velocity","Both"}, default = "Both", callback = function(v) AIM.PredictMode = v end })
+AimTab:CreateSlider({ name = "Velocity Lead (0.01s)", min = 0, max = 50, default = 15, increment = 1, callback = function(v) AIM.PredictLead = v / 100 end })
+AimTab:CreateSlider({ name = "Ping Multiplier (x10)", min = 0, max = 20, default = 10, increment = 1, callback = function(v) AIM.PingMult = v / 10 end })
 AimTab:CreateSection("Chance Aimlock")
 AimTab:CreateToggle({ name = "Enable", default = false, callback = function(v)
     ChanceAimbot.Enabled = v
     if v then chanceScanButtons() else ChanceAimbot._isLocking = false; ChanceAimbot._hooked = {} end
 end })
+AimTab:CreateSlider({ name = "Lock Time (0.1s)", min = 3, max = 30, default = 10, increment = 1, callback = function(v) ChanceAimbot.LockTime = v / 10 end })
+AimTab:CreateSlider({ name = "Prediction Min (x10)", min = 0, max = 100, default = 20, increment = 1, callback = function(v) ChanceAimbot.PredMin = v / 10 end })
+AimTab:CreateSlider({ name = "Prediction Max (x10)", min = 0, max = 150, default = 30, increment = 1, callback = function(v) ChanceAimbot.PredMax = v / 10 end })
+AimTab:CreateSlider({ name = "Turn Lead (x10)", min = 0, max = 30, default = 10, increment = 1, callback = function(v) ChanceAimbot.TurnLeadMult = v / 10 end })
 AimTab:CreateKeybind({ name = "Aimlock Key", default = "V", callback = function(k)
     if ChanceAimbot.Enabled and k == "V" then chanceStartAimlock() end
 end })
 
--- Veeronica Tab
-local VeeTab = Window:CreateTab({ name = "Veeronica", icon = 93364949241311 })
-VeeTab:CreateSection("Tricks")
-VeeTab:CreateToggle({ name = "Auto Trick (Wall Box)", default = false, callback = function(v) V.AutoTrick = v; veeAutoTrickStart() end })
-VeeTab:CreateSlider({ name = "Wall Radius", min = 1, max = 10, default = 5, increment = 1, callback = function(v) V.WallTrickRadius = v end })
-VeeTab:CreateDropdown({ name = "Input Method", options = {"Key","Button","Both"}, default = "Key", callback = function(v) V.WallTrickMode = v end })
-VeeTab:CreateToggle({ name = "Skate Control", default = false, callback = function(v) V.SkateControl = v; veeSkateCtrl(v) end })
-VeeTab:CreateToggle({ name = "Anti Rebound", default = false, callback = function(v) V.AntiRebound = v; if v then veeInstallAR() end end })
-VeeTab:CreateToggle({ name = "Unlimited Sk8", default = false, callback = function(v) V.UnlimitedSk8 = v; if v then veeInstallUSk8() end end })
-VeeTab:CreateToggle({ name = "Auto Farm sk8", default = false, callback = function(v) V.AutoFarmSk8 = v; if v then veeFarmStart() end end })
-VeeTab:CreateToggle({ name = "Auto Phase", default = false, callback = function(v) V.AutoPhase = v; veeAutoPhase(v) end })
-VeeTab:CreateSection("Custom Stats")
-VeeTab:CreateToggle({ name = "Enable Custom Stats", default = false, callback = function(v) V.CustomStats = v; if v then veeApplyStats() else veeResetStats() end end })
-VeeTab:CreateSlider({ name = "Skate Speed", min = 1, max = 10, default = 1, increment = 1, callback = function(v) V.Sk8Speed = v; if V.CustomStats then veeSetStat("Sk8Speed", v) end end })
-VeeTab:CreateSlider({ name = "Trick Boost", min = 1, max = 15, default = 1, increment = 1, callback = function(v) V.Sk8TrickSpeed = v; if V.CustomStats then veeSetStat("Sk8TrickAirborneSpeed", v) end end })
-VeeTab:CreateSlider({ name = "Bump Power", min = 10, max = 150, default = 12, increment = 1, callback = function(v) V.Sk8BumpPower = v; if V.CustomStats then veeSetStat("Sk8BumpPower", v) end end })
-
 -- Misc Tab
 local MiscTab = Window:CreateTab({ name = "Misc", icon = 93364949241311 })
+MiscTab:CreateSection("Visuals")
+MiscTab:CreateToggle({ name = "Hide Injury", default = false, callback = function(v)
+    Misc_HideInjury = v
+    reapplyMisc()
+end })
+MiscTab:CreateToggle({ name = "Disable Blindness", default = false, callback = function(v)
+    Misc_DisableBlindness = v
+    reapplyMisc()
+end })
 MiscTab:CreateSection("Utility")
 MiscTab:CreateButton({ name = "Fullbright", callback = function()
     pcall(function()
@@ -1499,4 +1296,4 @@ _G.SCPHubInput = UIS.InputBegan:Connect(function(input, gpe)
     end
 end)
 
-Window:Notify({ title = "SCP Hub", content = "Loaded · Rayfield Gen2", duration = 3 })
+Window:Notify({ title = "SCP Hub", content = "Loaded · v15", duration = 3 })

@@ -1,10 +1,11 @@
--- SCP Hub — assembled build
--- · Dark theme · Loading screen (assets 9859971171 / 9859971166)
+-- SCP Hub — assembled build (restored)
+-- · Dark theme · Loading screen w/ drawn LOCK logo + IMAGE background
+-- · Hub UI shares the same IMAGE background
 -- · UI Settings tab fixed (theme + save manager) · Veeronica invisible-box wall detection
 -- · Auto Block uses BOTH sound + killer-animation detection · Killer ESP per-category
 
 -- =========================================================
--- Bootstrap + Services (early so loading screen has them)
+-- Bootstrap + Services
 -- =========================================================
 repeat task.wait() until game:IsLoaded()
 
@@ -20,17 +21,26 @@ local ContentProvider   = game:GetService("ContentProvider")
 local CoreGui           = game:GetService("CoreGui")
 
 local lp = Players.LocalPlayer
-local PlayerGui = lp:FindFirstChildOfClass("PlayerGui") or lp:WaitForChild("PlayerGui", 10)
+local PlayerGui = lp:FindFirstChildOfClass("PlayerGui") or lp:WaitForChild("PlayerGui", 15)
+if not PlayerGui then
+    repeat task.wait() until lp:FindFirstChildOfClass("PlayerGui")
+    PlayerGui = lp:FindFirstChildOfClass("PlayerGui")
+end
+
+-- Shared background image (loading screen + hub)
+local BG_IMAGE           = "rbxassetid://9859971171"
+local BG_IMAGE_ALT       = "rbxassetid://9859971166"
+local BG_TRANSPARENCY    = 0.85  -- subtle (0 = opaque, 1 = invisible)
 
 -- =========================================================
--- LOADING SCREEN (shown on top; created before Library loads)
+-- LOADING SCREEN — drawn LOCK logo + IMAGE background
 -- =========================================================
 local Loading = {
     StartTime = tick(),
     MinDisplayTime = 3.0,
     Progress = 0,
     Done = false,
-    GUI = nil, Bar = nil, BarBG = nil, Pct = nil, Status = nil, Logo = nil,
+    GUI = nil, Bar = nil, BarBG = nil, Pct = nil, Status = nil, Lock = nil,
 }
 
 local function safeTween(inst, ti, props)
@@ -40,9 +50,78 @@ local function safeTween(inst, ti, props)
     return nil
 end
 
+local function makeLock(parent, accent, dark)
+    local body = Instance.new("Frame")
+    body.Name = "LockBody"
+    body.AnchorPoint = Vector2.new(0.5, 0)
+    body.Position = UDim2.fromScale(0.5, 0.46)
+    body.Size = UDim2.fromScale(0.55, 0.42)
+    body.BackgroundColor3 = accent
+    body.BorderSizePixel = 0
+    body.ZIndex = 6
+    body.Parent = parent
+    local bodyC = Instance.new("UICorner") bodyC.CornerRadius = UDim.new(0, 14) bodyC.Parent = body
+
+    local shackle = Instance.new("Frame")
+    shackle.Name = "Shackle"
+    shackle.AnchorPoint = Vector2.new(0.5, 1)
+    shackle.Position = UDim2.fromScale(0.5, 0.50)
+    shackle.Size = UDim2.fromScale(0.34, 0.30)
+    shackle.BackgroundTransparency = 1
+    shackle.ZIndex = 5
+    shackle.Parent = parent
+
+    local sTop = Instance.new("Frame")
+    sTop.AnchorPoint = Vector2.new(0.5, 0)
+    sTop.Position = UDim2.fromScale(0.5, 0)
+    sTop.Size = UDim2.fromScale(1, 0.22)
+    sTop.BackgroundColor3 = accent
+    sTop.BorderSizePixel = 0
+    sTop.ZIndex = 5
+    sTop.Parent = shackle
+    local sTopC = Instance.new("UICorner") sTopC.CornerRadius = UDim.new(1, 0) sTopC.Parent = sTop
+
+    local sL = Instance.new("Frame")
+    sL.Position = UDim2.fromScale(0, 0)
+    sL.Size = UDim2.fromScale(0.22, 1)
+    sL.BackgroundColor3 = accent
+    sL.BorderSizePixel = 0
+    sL.ZIndex = 5
+    sL.Parent = shackle
+
+    local sR = Instance.new("Frame")
+    sR.AnchorPoint = Vector2.new(1, 0)
+    sR.Position = UDim2.fromScale(1, 0)
+    sR.Size = UDim2.fromScale(0.22, 1)
+    sR.BackgroundColor3 = accent
+    sR.BorderSizePixel = 0
+    sR.ZIndex = 5
+    sR.Parent = shackle
+
+    local kh = Instance.new("Frame")
+    kh.AnchorPoint = Vector2.new(0.5, 0.5)
+    kh.Position = UDim2.fromScale(0.5, 0.34)
+    kh.Size = UDim2.fromScale(0.20, 0.20)
+    kh.BackgroundColor3 = dark
+    kh.BorderSizePixel = 0
+    kh.ZIndex = 7
+    kh.Parent = body
+    local khC = Instance.new("UICorner") khC.CornerRadius = UDim.new(1, 0) khC.Parent = kh
+
+    local ks = Instance.new("Frame")
+    ks.AnchorPoint = Vector2.new(0.5, 0)
+    ks.Position = UDim2.fromScale(0.5, 0.42)
+    ks.Size = UDim2.fromScale(0.055, 0.28)
+    ks.BackgroundColor3 = dark
+    ks.BorderSizePixel = 0
+    ks.ZIndex = 7
+    ks.Parent = body
+
+    return body
+end
+
 local function createLoadingScreen()
     local ok = pcall(function()
-        local parent = CoreGui
         local gui = Instance.new("ScreenGui")
         gui.Name = "SCPHubLoading"
         gui.IgnoreGuiInset = true
@@ -50,56 +129,50 @@ local function createLoadingScreen()
         gui.ResetOnSpawn = false
         gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
         local parentOK = pcall(function() gui.Parent = CoreGui end)
-        if not parentOK or not gui.Parent then
-            gui.Parent = PlayerGui
-        end
+        if not parentOK or not gui.Parent then gui.Parent = PlayerGui end
 
-        -- Background
+        -- Dark base
         local bg = Instance.new("Frame")
-        bg.Name = "BG"
         bg.Size = UDim2.fromScale(1, 1)
         bg.BackgroundColor3 = Color3.fromRGB(8, 8, 10)
         bg.BorderSizePixel = 0
         bg.ZIndex = 1
         bg.Parent = gui
 
-        -- Logo container (aspect-locked so image isn't stretched)
-        local logoFrame = Instance.new("Frame")
-        logoFrame.Name = "LogoFrame"
-        logoFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-        logoFrame.Position = UDim2.fromScale(0.5, 0.4)
-        logoFrame.Size = UDim2.fromScale(0.32, 0.32)
-        logoFrame.BackgroundTransparency = 1
-        logoFrame.ZIndex = 3
-        logoFrame.Parent = gui
-        local logoAspect = Instance.new("UIAspectRatioConstraint")
-        logoAspect.AspectRatio = 1
-        logoAspect.Parent = logoFrame
-
-        local logo = Instance.new("ImageLabel")
-        logo.Name = "Logo"
-        logo.Size = UDim2.fromScale(1, 1)
-        logo.BackgroundTransparency = 1
-        logo.Image = "rbxassetid://9859971171"
-        logo.ImageTransparency = 0
-        logo.ZIndex = 3
-        logo.Parent = logoFrame
-
-        -- Try preload; swap to fallback if it fails
+        -- Image background (subtle)
+        local bgImg = Instance.new("ImageLabel")
+        bgImg.Name = "BgImage"
+        bgImg.Size = UDim2.fromScale(1, 1)
+        bgImg.BackgroundTransparency = 1
+        bgImg.Image = BG_IMAGE
+        bgImg.ImageTransparency = BG_TRANSPARENCY
+        bgImg.ScaleType = Enum.ScaleType.Crop
+        bgImg.ZIndex = 2
+        bgImg.Parent = gui
         task.spawn(function()
-            local preOK = pcall(function() ContentProvider:PreloadAsync({ logo }) end)
-            local hasSize = false
-            pcall(function()
-                hasSize = logo.ImageRectSize.X > 0 and logo.ImageRectSize.Y > 0
-            end)
-            if not preOK or not hasSize then
-                pcall(function() logo.Image = "rbxassetid://9859971166" end)
+            local preOK = pcall(function() ContentProvider:PreloadAsync({ bgImg }) end)
+            if not preOK then
+                pcall(function() bgImg.Image = BG_IMAGE_ALT end)
             end
         end)
 
+        -- Logo container
+        local logoFrame = Instance.new("Frame")
+        logoFrame.Name = "LogoFrame"
+        logoFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+        logoFrame.Position = UDim2.fromScale(0.5, 0.40)
+        logoFrame.Size = UDim2.fromScale(0.24, 0.24)
+        logoFrame.BackgroundTransparency = 1
+        logoFrame.ZIndex = 4
+        logoFrame.Parent = gui
+        local aspect = Instance.new("UIAspectRatioConstraint")
+        aspect.AspectRatio = 1
+        aspect.Parent = logoFrame
+
+        Loading.Lock = makeLock(logoFrame, Color3.fromRGB(220, 40, 40), Color3.fromRGB(15, 15, 18))
+
         -- Title
         local title = Instance.new("TextLabel")
-        title.Name = "Title"
         title.AnchorPoint = Vector2.new(0.5, 0)
         title.Position = UDim2.fromScale(0.5, 0.60)
         title.Size = UDim2.fromScale(0.5, 0.055)
@@ -108,39 +181,31 @@ local function createLoadingScreen()
         title.Text = "SCP HUB"
         title.TextColor3 = Color3.fromRGB(220, 40, 40)
         title.TextScaled = true
-        title.TextStrokeTransparency = 0.5
+        title.TextStrokeTransparency = 0.4
         title.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-        title.ZIndex = 3
+        title.ZIndex = 4
         title.Parent = gui
 
-        -- Bar background
+        -- Bar
         local barBG = Instance.new("Frame")
-        barBG.Name = "BarBG"
         barBG.AnchorPoint = Vector2.new(0.5, 0.5)
         barBG.Position = UDim2.fromScale(0.5, 0.73)
         barBG.Size = UDim2.fromScale(0.42, 0.012)
         barBG.BackgroundColor3 = Color3.fromRGB(30, 30, 34)
         barBG.BorderSizePixel = 0
-        barBG.ZIndex = 3
+        barBG.ZIndex = 4
         barBG.Parent = gui
-        local barCorner = Instance.new("UICorner")
-        barCorner.CornerRadius = UDim.new(0, 6)
-        barCorner.Parent = barBG
+        local barCorner = Instance.new("UICorner") barCorner.CornerRadius = UDim.new(0, 6) barCorner.Parent = barBG
 
         local bar = Instance.new("Frame")
-        bar.Name = "BarFill"
         bar.Size = UDim2.fromScale(0, 1)
         bar.BackgroundColor3 = Color3.fromRGB(200, 30, 30)
         bar.BorderSizePixel = 0
-        bar.ZIndex = 4
+        bar.ZIndex = 5
         bar.Parent = barBG
-        local barFillCorner = Instance.new("UICorner")
-        barFillCorner.CornerRadius = UDim.new(0, 6)
-        barFillCorner.Parent = bar
+        local barFillCorner = Instance.new("UICorner") barFillCorner.CornerRadius = UDim.new(0, 6) barFillCorner.Parent = bar
 
-        -- Percent
         local pct = Instance.new("TextLabel")
-        pct.Name = "Percent"
         pct.AnchorPoint = Vector2.new(0.5, 0)
         pct.Position = UDim2.fromScale(0.5, 0.755)
         pct.Size = UDim2.fromScale(0.5, 0.035)
@@ -149,12 +214,10 @@ local function createLoadingScreen()
         pct.Text = "0%"
         pct.TextColor3 = Color3.fromRGB(200, 200, 200)
         pct.TextScaled = true
-        pct.ZIndex = 3
+        pct.ZIndex = 4
         pct.Parent = gui
 
-        -- Status text
         local status = Instance.new("TextLabel")
-        status.Name = "Status"
         status.AnchorPoint = Vector2.new(0.5, 0)
         status.Position = UDim2.fromScale(0.5, 0.80)
         status.Size = UDim2.fromScale(0.7, 0.03)
@@ -163,7 +226,7 @@ local function createLoadingScreen()
         status.Text = "Booting..."
         status.TextColor3 = Color3.fromRGB(140, 140, 140)
         status.TextScaled = true
-        status.ZIndex = 3
+        status.ZIndex = 4
         status.Parent = gui
 
         Loading.GUI = gui
@@ -171,42 +234,31 @@ local function createLoadingScreen()
         Loading.BarBG = barBG
         Loading.Pct = pct
         Loading.Status = status
-        Loading.Logo = logo
     end)
-    if not ok then
-        warn("[SCP Hub] Loading screen creation failed (non-fatal)")
-    end
+    if not ok then warn("[SCP Hub] Loading screen creation failed (non-fatal)") end
 end
 
 createLoadingScreen()
 
 local function setProgress(pct, status)
     Loading.Progress = math.clamp(tonumber(pct) or Loading.Progress, 0, 100)
-    if Loading.Done then return end
     if Loading.GUI and Loading.GUI.Parent then
         if Loading.Bar then
             safeTween(Loading.Bar, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {
                 Size = UDim2.fromScale(Loading.Progress / 100, 1)
             })
         end
-        if Loading.Pct then
-            pcall(function() Loading.Pct.Text = math.floor(Loading.Progress) .. "%" end)
-        end
-        if Loading.Status and status then
-            pcall(function() Loading.Status.Text = tostring(status) end)
-        end
+        if Loading.Pct then pcall(function() Loading.Pct.Text = math.floor(Loading.Progress) .. "%" end) end
+        if Loading.Status and status then pcall(function() Loading.Status.Text = tostring(status) end) end
     end
 end
 
 local function finishLoading()
     if Loading.Done then return end
-    Loading.Done = true
     setProgress(100, "Ready!")
-    -- enforce minimum display time
     local elapsed = tick() - Loading.StartTime
-    if elapsed < Loading.MinDisplayTime then
-        task.wait(Loading.MinDisplayTime - elapsed)
-    end
+    if elapsed < Loading.MinDisplayTime then task.wait(Loading.MinDisplayTime - elapsed) end
+    Loading.Done = true
     local gui = Loading.GUI
     Loading.GUI = nil
     if not gui or not gui.Parent then return end
@@ -221,7 +273,7 @@ local function finishLoading()
                 safeTween(d, ti, { ImageTransparency = 1 })
             end
         end
-        task.wait(0.65)
+        task.wait(0.7)
         if gui and gui.Parent then gui:Destroy() end
     end)
 end
@@ -331,6 +383,7 @@ end
 
 local firesignalF = (typeof(firesignal) == "function") and firesignal
     or rawget(getfenv(), "FireSignal")
+    or rawget(getfenv(), "firesignal")
 
 -- =========================================================
 -- Block firing
@@ -634,9 +687,11 @@ RAY_LOS.FilterType = Enum.RaycastFilterType.Exclude
 RAY_LOS.IgnoreWater = true
 
 local function nearestKillerPart()
-    local myRoot = getMyRoot(); if not myRoot or not KillersFolder then return nil end
+    local myRoot = getMyRoot()
+    local kf = KillersFolder or (Workspace:FindFirstChild("Players") and Workspace.Players:FindFirstChild("Killers"))
+    if not myRoot or not kf then return nil end
     local best, bestDist = nil, math.huge
-    for _, k in ipairs(KillersFolder:GetChildren()) do
+    for _, k in ipairs(kf:GetChildren()) do
         if k:IsA("Model") and k ~= lp.Character then
             local hrp = k:FindFirstChild("HumanoidRootPart")
             local hum = k:FindFirstChildOfClass("Humanoid")
@@ -653,7 +708,7 @@ end
 -- HDT
 -- =========================================================
 local HDT_Trigger
-HDT = {
+local HDT = {
     Enabled = false, AutoTrigger = true, Speed = 12, StopDistance = 2,
     DragDuration = 0.4, Cooldown = 27, MaxRange = 40,
     _dragId = 0, _dragging = false, _conn = nil,
@@ -1343,17 +1398,7 @@ local function chanceMatchesAbility(btn)
     for _, blob in ipairs(blobs) do
         blob = blob:gsub("%s+", " ")
         for _, kw in ipairs(CHANCE_ABILITY_KEYWORDS) do
-            if blob:find(kw, 1, true) then
-                if kw == "shot" or kw == "gun" or kw == "shoot" then
-                    if blob:find("oneshot", 1, true) or blob:find("one shot", 1, true)
-                        or blob:find("flint", 1, true) or blob:find("chance", 1, true)
-                        or blob:find("pistol", 1, true) or blob:find("revolver", 1, true) then
-                        return true
-                    end
-                else
-                    return true
-                end
-            end
+            if blob:find(kw, 1, true) then return true end
         end
     end
     return false
@@ -1427,8 +1472,8 @@ local function chanceHookButton(btn)
 end
 local function chanceScanButtons()
     pcall(function()
-        local pg = lp:FindFirstChild("PlayerGui"); if not pg then return end
-        for _, b in ipairs(pg:GetDescendants()) do chanceHookButton(b) end
+        if not PlayerGui then return end
+        for _, b in ipairs(PlayerGui:GetDescendants()) do chanceHookButton(b) end
     end)
 end
 task.spawn(function()
@@ -1870,6 +1915,56 @@ pcall(function()
     })
 end)
 
+-- =========================================================
+-- HUB BACKGROUND IMAGE
+-- Injects the loading-screen image behind the Obsidian window.
+-- =========================================================
+task.spawn(function()
+    task.wait(1.2)  -- give Obsidian time to build
+    local sg = nil
+    -- Try Obsidian's stored reference first
+    pcall(function() sg = Library.ScreenGui end)
+    if not sg then
+        local containers = {}
+        pcall(function() if gethui then table.insert(containers, gethui()) end end)
+        table.insert(containers, CoreGui)
+        table.insert(containers, PlayerGui)
+        for _, c in ipairs(containers) do
+            if c and not sg then
+                for _, x in ipairs(c:GetChildren()) do
+                    if x:IsA("ScreenGui")
+                        and x.Name ~= "SCPHubLoading"
+                        and x.Name ~= "SCPHubBg"
+                        and not x:FindFirstChild("SCPHubBgImage") then
+                        -- Heuristic: has a Frame descendant whose size is large (the Obsidian window)
+                        local isHub = false
+                        for _, d in ipairs(x:GetDescendants()) do
+                            if d:IsA("Frame") and d.AbsoluteSize.X > 400 and d.AbsoluteSize.Y > 300 then
+                                isHub = true
+                                break
+                            end
+                        end
+                        if isHub then sg = x; break end
+                    end
+                end
+            end
+        end
+    end
+    if not sg then return end
+    if sg:FindFirstChild("SCPHubBgImage") then return end
+
+    local bg = Instance.new("ImageLabel")
+    bg.Name = "SCPHubBgImage"
+    bg.Size = UDim2.fromScale(1, 1)
+    bg.BackgroundTransparency = 1
+    bg.Image = BG_IMAGE
+    bg.ImageTransparency = BG_TRANSPARENCY
+    bg.ScaleType = Enum.ScaleType.Crop
+    bg.ZIndex = -1000
+    bg.Active = false
+    bg.Parent = sg
+end)
+
 local Tabs = {
     ESP        = Window:AddTab("ESP", "eye"),
     Stam       = Window:AddTab("Stamina", "zap"),
@@ -2190,15 +2285,16 @@ end)
 setProgress(90, "Loading Veeronica tab...")
 
 -- =========================================================
--- VEERONICA TAB (invisible-box wall detection; presses jump)
+-- VEERONICA TAB
 -- =========================================================
 pcall(function()
     local V = {
-        AutoTrick=false, AutoTrickThread=nil, SkateControl=false, AntiRebound=false,
+        AutoTrick=false, AutoTrickThread=nil, AutoTrickDebug=false,
+        SkateControl=false, AntiRebound=false,
         UnlimitedSk8=false, AutoFarmSk8=false, AutoFarmSk8Started=false, CustomStats=false,
         Sk8Everywhere=false, Sk8EverywhereThread=nil, AutoPhase=false, AutoPhaseThread=nil,
         Sk8Speed=1.15, Sk8TrickSpeed=1.42, Sk8BumpPower=11.9, Sk8TrickStamina=10, Sk8TrickCooldown=1,
-        WallTrickEnabled=false, WallTrickThread=nil, WallTrickRadius=5,
+        WallTrickEnabled=false, WallTrickRadius=5,
         WallTrickCooldown=0.15, WallTrickLast=0, WallTrickMode="Key",
         WallTrickRequireSkate=true, WallTrickUseHighlight=false,
         WallTrickLastWall=nil,
@@ -2333,9 +2429,9 @@ pcall(function()
     end
 
     local function veeFireStamButton()
-        local pg = lp:FindFirstChild("PlayerGui"); if not pg then return false end
+        if not PlayerGui then return false end
         local targets = {}
-        local main = pg:FindFirstChild("MainUI")
+        local main = PlayerGui:FindFirstChild("MainUI")
         if main then
             for _, n in ipairs({ "SprintingButton", "StaminaButton", "SprintButton" }) do
                 local b = main:FindFirstChild(n)
@@ -2628,9 +2724,10 @@ pcall(function()
     TR:AddToggle("VWallUseHighlight", { Text="Legacy Highlight Mode", Default=false,
         Callback=function(v) V.WallTrickUseHighlight = v end })
     TR:AddToggle("VAutoTrickDebug", { Text="Auto Trick Debug", Default=false, Callback=function(v)
+        V.AutoTrickDebug = v
         if not v then return end
         task.spawn(function()
-            while v do
+            while V.AutoTrickDebug do
                 task.wait(0.5)
                 if V.AutoTrick and lp.Character then
                     local ok, hasWall, wallInst = pcall(veeWallCheck)
@@ -2670,7 +2767,7 @@ end)
 setProgress(95, "Finalizing UI settings...")
 
 -- =========================================================
--- UI Settings (FIXED — theme + save manager)
+-- UI Settings (theme + save manager)
 -- =========================================================
 do
     local themeOK = pcall(function() ThemeManager:SetLibrary(Library) end)
@@ -2710,7 +2807,7 @@ do
 end
 
 -- =========================================================
--- DONE — hide loading screen
+-- DONE
 -- =========================================================
 notify("SCP Hub", "loaded")
 finishLoading()

@@ -1,5 +1,7 @@
--- Wind Hub v1 — assembled build (non-blocking UI load)
--- Tabs: ESP · Stam · Auto Block · Aim · Gen · Killer · HDT · Misc · Veeronica · UI Settings
+-- Wind Hub v1 — assembled build with all fixes
+-- Fixes applied: non-blocking UI load · Auto Gen precise timing · Auto Block/ESP round-survival
+-- · FacingVisual box off+transparent by default · ESP fill/outline transparency sliders
+-- · Auto Trick multi-location highlight + multi-method keypress · Killers tab + QTEs · Veeronica tab
 
 repeat task.wait() until game:IsLoaded()
 
@@ -25,7 +27,6 @@ local UIS                = game:GetService("UserInputService")
 local lp = Players.LocalPlayer
 local PlayerGui = lp:FindFirstChildOfClass("PlayerGui") or lp:WaitForChild("PlayerGui", 10)
 
--- Non-blocking: MainUI is only used lazily inside trySignalBlock.
 local MainUI
 task.spawn(function()
     MainUI = PlayerGui:WaitForChild("MainUI", 300)
@@ -48,18 +49,9 @@ do
     if not RemoteEvent then warn("[Wind Hub] RemoteEvent not found") end
 end
 
--- Non-blocking: folders resolve in background; callbacks re-check at use time.
 local PlayersFolder = Workspace:FindFirstChild("Players")
 local KillersFolder = PlayersFolder and PlayersFolder:FindFirstChild("Killers") or nil
 local SurvivorsFolder = PlayersFolder and PlayersFolder:FindFirstChild("Survivors") or nil
-task.spawn(function()
-    while not PlayersFolder do
-        task.wait(0.25)
-        PlayersFolder = Workspace:FindFirstChild("Players")
-    end
-    if not KillersFolder then KillersFolder = PlayersFolder:WaitForChild("Killers", 60) end
-    if not SurvivorsFolder then SurvivorsFolder = PlayersFolder:WaitForChild("Survivors", 60) end
-end)
 
 local function buildBuffer(str)
     local bytes = { 3, #str, 0, 0, 0 }
@@ -188,16 +180,17 @@ for _, id in ipairs({
 }) do M1_ANIM_IDS[id] = true end
 
 -- =========================================================
--- Facing visual
+-- Facing visual (Patch A: box OFF by default, transparent when on)
 -- =========================================================
 local FacingVisual = {
-    BoxEnabled    = true,
+    BoxEnabled    = false,
     BoxWidth      = 12,
     BoxHeight     = 8,
     BoxLength     = 30,
     BoxColor      = Color3.fromRGB(255, 60, 60),
     BoxMaterial   = "Neon",
-    BoxTransparency = 0.55,
+    BoxTransparency = 0.9,
+    BoxOutlineTransparency = 1,
     AppearMode    = "Always",
     M1FlashDuration = 0.45,
     M1FlashUntil  = setmetatable({}, { __mode = "k" }),
@@ -258,7 +251,7 @@ local function applyBoxAppearance(data, killer)
     local part = data and data.part
     local hl   = data and data.highlight
     if not part or not part.Parent then return end
-    local show = boxShouldShow(killer)
+    local show = killer and boxShouldShow(killer) or FacingVisual.BoxEnabled
     part.Color = FacingVisual.BoxColor
     part.Transparency = show and FacingVisual.BoxTransparency or 1
     local mat = Enum.Material.Neon
@@ -266,7 +259,7 @@ local function applyBoxAppearance(data, killer)
     part.Material = mat
     if hl and hl.Parent then
         hl.OutlineColor = FacingVisual.BoxColor
-        hl.OutlineTransparency = show and 0 or 1
+        hl.OutlineTransparency = show and (FacingVisual.BoxOutlineTransparency or 1) or 1
         hl.FillTransparency = 1
     end
 end
@@ -287,7 +280,7 @@ local function createBox(killer)
     hl.Name = "WindHubDetectionHighlight"
     hl.FillTransparency = 1
     hl.OutlineColor = FacingVisual.BoxColor
-    hl.OutlineTransparency = 0
+    hl.OutlineTransparency = FacingVisual.BoxOutlineTransparency or 0
     hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
     hl.Adornee = part
     hl.Parent = part
@@ -323,10 +316,10 @@ local function ensureBoxes()
     end
 end
 task.spawn(function()
-    while not KillersFolder do task.wait(0.5) end
-    KillersFolder.ChildAdded:Connect(function(k) if k:IsA("Model") then ensureVisualsFor(k) end end)
-    KillersFolder.ChildRemoved:Connect(function(k) destroyBox(k); destroyCircle(k) end)
-    while true do task.wait(0.5); ensureBoxes() end
+    while true do
+        task.wait(0.5)
+        pcall(function() ensureBoxes() end)
+    end
 end)
 task.spawn(function()
     while true do
@@ -381,13 +374,6 @@ local function hookKillerForM1Flash(killer)
         end
     end)
 end
-task.spawn(function()
-    while not KillersFolder do task.wait(0.5) end
-    for _, k in ipairs(KillersFolder:GetChildren()) do
-        if k:IsA("Model") then hookKillerForM1Flash(k) end
-    end
-    KillersFolder.ChildAdded:Connect(function(k) if k:IsA("Model") then hookKillerForM1Flash(k) end end)
-end)
 
 local RAY_LOS = RaycastParams.new()
 RAY_LOS.FilterType = Enum.RaycastFilterType.Exclude
@@ -624,7 +610,10 @@ local function onSoundTrigger(sound)
     local id = extractSoundId(sound)
     if not id or not TRIGGER_SOUNDS[id] then return end
     local ancestor = sound:FindFirstAncestorOfClass("Model")
-    if not ancestor or ancestor.Parent ~= KillersFolder then return end
+    if not ancestor then return end
+    -- Check ancestor against CURRENT KillersFolder (dynamic)
+    local kf = KillersFolder or (Workspace:FindFirstChild("Players") and Workspace.Players:FindFirstChild("Killers"))
+    if not kf or ancestor.Parent ~= kf then return end
     _G.WindHub_LastLoggedID = id
     if LOG_TRIGGER_IDS then
         print(string.format("[Wind Hub] Trigger sound ID: %s | Killer: %s | Sound: %s",
@@ -646,10 +635,60 @@ local function hookSound(sound)
     end)
     if sound.IsPlaying then onSoundTrigger(sound) end
 end
+
+-- =========================================================
+-- PATCH C — DYNAMIC FOLDER TRACKER
+-- Re-resolves Killers/Survivors folders every 0.5s. When the
+-- round changes and folders are recreated, re-hooks sounds,
+-- M1 flash listeners, and FacingVisual boxes.
+-- This is what makes Auto Block + Killer ESP survive round changes.
+-- =========================================================
 task.spawn(function()
-    while not KillersFolder do task.wait(0.5) end
-    for _, d in ipairs(KillersFolder:GetDescendants()) do if d:IsA("Sound") then hookSound(d) end end
-    KillersFolder.DescendantAdded:Connect(function(d) if d:IsA("Sound") then hookSound(d) end end)
+    local lastKillers, lastSurvivors
+    while true do
+        task.wait(0.5)
+        local pf = Workspace:FindFirstChild("Players")
+        if pf then
+            PlayersFolder = pf
+            local kf = pf:FindFirstChild("Killers")
+            local sf = pf:FindFirstChild("Survivors")
+
+            if sf and sf ~= lastSurvivors then
+                SurvivorsFolder = sf
+                lastSurvivors = sf
+            end
+
+            if kf and kf ~= lastKillers then
+                KillersFolder = kf
+                lastKillers = kf
+
+                for _, d in ipairs(kf:GetDescendants()) do
+                    if d:IsA("Sound") then hookSound(d) end
+                end
+                kf.DescendantAdded:Connect(function(d)
+                    if d:IsA("Sound") then hookSound(d) end
+                end)
+
+                for _, k in ipairs(kf:GetChildren()) do
+                    if k:IsA("Model") then hookKillerForM1Flash(k) end
+                end
+                kf.ChildAdded:Connect(function(k)
+                    if k:IsA("Model") then hookKillerForM1Flash(k) end
+                end)
+
+                if FacingVisual.BoxEnabled then
+                    for _, k in ipairs(kf:GetChildren()) do
+                        if k:IsA("Model") then createBox(k) end
+                    end
+                end
+                if FacingVisual.CircleEnabled then
+                    for _, k in ipairs(kf:GetChildren()) do
+                        if k:IsA("Model") then createCircle(k) end
+                    end
+                end
+            end
+        end
+    end
 end)
 
 -- =========================================================
@@ -674,9 +713,10 @@ local function isPlayingSurvivor()
 end
 local function updateCachedTarget()
     local myRoot = getMyRoot()
-    if not myRoot or not KillersFolder then AIM.CachedTargetHRP = nil return end
+    local kf = KillersFolder or (Workspace:FindFirstChild("Players") and Workspace.Players:FindFirstChild("Killers"))
+    if not myRoot or not kf then AIM.CachedTargetHRP = nil return end
     local best, bestD = nil, 500
-    for _, s in ipairs(KillersFolder:GetChildren()) do
+    for _, s in ipairs(kf:GetChildren()) do
         if s:IsA("Model") and s ~= lp.Character then
             local hrp = s:FindFirstChild("HumanoidRootPart")
             local hum = s:FindFirstChildOfClass("Humanoid")
@@ -1073,17 +1113,19 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- =========================================================
--- ESP
+-- ESP (Patch B: transparency fields in config)
 -- =========================================================
 local ESP_CFG = {
     Killers   = { Enabled = true, Box = true, Chams = true, Name = true, Distance = true, Tracer = false,
                   FillColor = Color3.fromRGB(255, 40, 40), OutlineColor = Color3.fromRGB(255, 255, 255),
                   TextColor = Color3.fromRGB(255, 200, 200), TracerColor = Color3.fromRGB(255, 60, 60),
-                  MaxDistance = 1500 },
+                  MaxDistance = 1500,
+                  FillTransparency = 0.55, OutlineTransparency = 0 },
     Survivors = { Enabled = true, Box = true, Chams = true, Name = true, Distance = true, Tracer = false,
                   FillColor = Color3.fromRGB(40, 255, 90), OutlineColor = Color3.fromRGB(255, 255, 255),
                   TextColor = Color3.fromRGB(200, 255, 200), TracerColor = Color3.fromRGB(60, 255, 100),
-                  MaxDistance = 1500 },
+                  MaxDistance = 1500,
+                  FillTransparency = 0.55, OutlineTransparency = 0 },
     Generators = { Enabled = false },
     Items      = { Enabled = false },
 }
@@ -1118,7 +1160,8 @@ local function espMakeChams(model, cfg)
     local hl = Instance.new("Highlight")
     hl.Name = "WindHubESPChams"; hl.Adornee = model
     hl.FillColor = cfg.FillColor; hl.OutlineColor = cfg.OutlineColor
-    hl.FillTransparency = 0.55; hl.OutlineTransparency = 0
+    hl.FillTransparency = cfg.FillTransparency or 0.55
+    hl.OutlineTransparency = cfg.OutlineTransparency or 0
     hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
     hl.Parent = model
     return hl
@@ -1177,6 +1220,8 @@ local function espEnsureForModel(model, cfg)
         if t.Chams then
             t.Chams.FillColor = cfg.FillColor
             t.Chams.OutlineColor = cfg.OutlineColor
+            t.Chams.FillTransparency = cfg.FillTransparency or 0.55
+            t.Chams.OutlineTransparency = cfg.OutlineTransparency or 0
         end
     elseif t.Chams then pcall(function() t.Chams:Destroy() end); t.Chams = nil end
     if cfg.Name or cfg.Distance then
@@ -1217,8 +1262,18 @@ end
 task.spawn(function()
     while true do
         task.wait(0.2)
-        pcall(function() if ESP_CFG.Killers.Enabled then espScanCategory(KillersFolder, ESP_CFG.Killers, true) end end)
-        pcall(function() if ESP_CFG.Survivors.Enabled then espScanCategory(SurvivorsFolder, ESP_CFG.Survivors, true) end end)
+        pcall(function()
+            if ESP_CFG.Killers.Enabled then
+                local kf = KillersFolder or (Workspace:FindFirstChild("Players") and Workspace.Players:FindFirstChild("Killers"))
+                espScanCategory(kf, ESP_CFG.Killers, true)
+            end
+        end)
+        pcall(function()
+            if ESP_CFG.Survivors.Enabled then
+                local sf = SurvivorsFolder or (Workspace:FindFirstChild("Players") and Workspace.Players:FindFirstChild("Survivors"))
+                espScanCategory(sf, ESP_CFG.Survivors, true)
+            end
+        end)
     end
 end)
 
@@ -1300,16 +1355,14 @@ task.spawn(function()
 end)
 
 -- =========================================================
--- AUTO GENERATOR (fixed: precise timing, no drift)
+-- AUTO GENERATOR (precise timing)
 -- =========================================================
 local AUTOGEN = { Enabled = false, Interval = 1.05, MaxDistance = 10, _thread = nil }
-
 local function getIngameMap()
     local map = workspace:FindFirstChild("Map")
     map = map and map:FindFirstChild("Ingame")
     return map and map:FindFirstChild("Map")
 end
-
 local function autogenFireOnce()
     local map = getIngameMap()
     local myRoot = getMyRoot()
@@ -1330,7 +1383,6 @@ local function autogenFireOnce()
         end
     end
 end
-
 local function autogenLoop()
     if AUTOGEN._thread then pcall(task.cancel, AUTOGEN._thread); AUTOGEN._thread = nil end
     if not AUTOGEN.Enabled then return end
@@ -1450,15 +1502,16 @@ local function notify(t, d)
     pcall(function() Library:Notify({ Title = t, Description = d, Time = 4 }) end)
 end
 
--- ESP Tab
+-- ESP Tab (Patch D: transparency sliders)
 pcall(function()
     local L = Tabs.ESP:AddLeftGroupbox("Killer ESP")
     L:AddToggle("ESPK", { Text = "Enabled", Default = true, Callback = function(v)
         ESP_CFG.Killers.Enabled = v
-        if not v and KillersFolder then
-            for _, m in ipairs(KillersFolder:GetChildren()) do
+        if not v then
+            local kf = KillersFolder or (Workspace:FindFirstChild("Players") and Workspace.Players:FindFirstChild("Killers"))
+            if kf then for _, m in ipairs(kf:GetChildren()) do
                 if m:IsA("Model") then espClearTrackedModel(m) end
-            end
+            end end
         end
     end })
     L:AddToggle("ESPKBox",   { Text = "Box",               Default = true,  Callback = function(v) ESP_CFG.Killers.Box = v end })
@@ -1467,14 +1520,27 @@ pcall(function()
     L:AddToggle("ESPKDist",  { Text = "Distance",          Default = true,  Callback = function(v) ESP_CFG.Killers.Distance = v end })
     L:AddToggle("ESPKTracer",{ Text = "Tracer",            Default = false, Callback = function(v) ESP_CFG.Killers.Tracer = v end })
     L:AddSlider("ESPKRange", { Text = "Max Distance (studs)", Min = 100, Max = 5000, Default = 1500, Rounding = 0, Callback = function(v) ESP_CFG.Killers.MaxDistance = v end })
+    L:AddSlider("ESPKFill", { Text = "Highlight Fill Transparency", Min = 0, Max = 1, Default = 0.55, Rounding = 2, Callback = function(v)
+        ESP_CFG.Killers.FillTransparency = v
+        for _, t in pairs(ESP_TRACK) do
+            if t.Chams and t.Chams.Parent then t.Chams.FillTransparency = v end
+        end
+    end })
+    L:AddSlider("ESPKOutline", { Text = "Highlight Outline Transparency", Min = 0, Max = 1, Default = 0, Rounding = 2, Callback = function(v)
+        ESP_CFG.Killers.OutlineTransparency = v
+        for _, t in pairs(ESP_TRACK) do
+            if t.Chams and t.Chams.Parent then t.Chams.OutlineTransparency = v end
+        end
+    end })
 
     local R = Tabs.ESP:AddRightGroupbox("Survivor ESP")
     R:AddToggle("ESPS", { Text = "Enabled", Default = true, Callback = function(v)
         ESP_CFG.Survivors.Enabled = v
-        if not v and SurvivorsFolder then
-            for _, m in ipairs(SurvivorsFolder:GetChildren()) do
+        if not v then
+            local sf = SurvivorsFolder or (Workspace:FindFirstChild("Players") and Workspace.Players:FindFirstChild("Survivors"))
+            if sf then for _, m in ipairs(sf:GetChildren()) do
                 if m:IsA("Model") then espClearTrackedModel(m) end
-            end
+            end end
         end
     end })
     R:AddToggle("ESPSBox",   { Text = "Box",               Default = true,  Callback = function(v) ESP_CFG.Survivors.Box = v end })
@@ -1483,6 +1549,18 @@ pcall(function()
     R:AddToggle("ESPSDist",  { Text = "Distance",          Default = true,  Callback = function(v) ESP_CFG.Survivors.Distance = v end })
     R:AddToggle("ESPSTracer",{ Text = "Tracer",            Default = false, Callback = function(v) ESP_CFG.Survivors.Tracer = v end })
     R:AddSlider("ESPSRange", { Text = "Max Distance (studs)", Min = 100, Max = 5000, Default = 1500, Rounding = 0, Callback = function(v) ESP_CFG.Survivors.MaxDistance = v end })
+    R:AddSlider("ESPSFill", { Text = "Highlight Fill Transparency", Min = 0, Max = 1, Default = 0.55, Rounding = 2, Callback = function(v)
+        ESP_CFG.Survivors.FillTransparency = v
+        for _, t in pairs(ESP_TRACK) do
+            if t.Chams and t.Chams.Parent then t.Chams.FillTransparency = v end
+        end
+    end })
+    R:AddSlider("ESPSOutline", { Text = "Highlight Outline Transparency", Min = 0, Max = 1, Default = 0, Rounding = 2, Callback = function(v)
+        ESP_CFG.Survivors.OutlineTransparency = v
+        for _, t in pairs(ESP_TRACK) do
+            if t.Chams and t.Chams.Parent then t.Chams.OutlineTransparency = v end
+        end
+    end })
 
     local W = Tabs.ESP:AddLeftGroupbox("World")
     W:AddToggle("ESPG", { Text = "Generators", Default = false, Callback = function(v)
@@ -1514,7 +1592,7 @@ end)
 -- Stamina Tab
 pcall(function()
     local L = Tabs.Stam:AddLeftGroupbox("Sprint")
-    if not Sprinting then L:AddLabel("No sprinting module found")
+    if not Sprinting then L:AddLabel("No sprinting module found (will appear once game loads it)")
     else
         L:AddDropdown("StamPreset", { Text = "Stamina Preset",
             Values = { "Regular", "Semi cheats", "Infinite" }, Default = 1, Multi = false,
@@ -1525,7 +1603,7 @@ pcall(function()
     end
 end)
 
--- Auto Block Tab
+-- Auto Block Tab (Patch D: box defaults OFF, transparency sliders)
 pcall(function()
     local L = Tabs.AutoBlock:AddLeftGroupbox("Auto Block")
     L:AddToggle("AB", { Text = "Enable Auto Block",
@@ -1557,10 +1635,11 @@ pcall(function()
     B:AddLabel("3. Click 'Mark Last Logged ID'")
 
     local D = Tabs.AutoBlock:AddRightGroupbox("Box")
-    D:AddToggle("BoxEnabled", { Text = "Show Box", Default = true,
+    D:AddToggle("BoxEnabled", { Text = "Show Box", Default = false,
         Callback = function(v)
             FacingVisual.BoxEnabled = v
-            if KillersFolder then for _, k in ipairs(KillersFolder:GetChildren()) do
+            local kf = KillersFolder or (Workspace:FindFirstChild("Players") and Workspace.Players:FindFirstChild("Killers"))
+            if kf then for _, k in ipairs(kf:GetChildren()) do
                 if k:IsA("Model") then
                     if v then createBox(k) else destroyBox(k) end
                 end
@@ -1569,6 +1648,18 @@ pcall(function()
     D:AddSlider("BoxWidth",  { Text = "Box Width",  Min = 1, Max = 60,  Default = 12, Rounding = 0, Callback = function(v) FacingVisual.BoxWidth = v end })
     D:AddSlider("BoxLength", { Text = "Box Length", Min = 1, Max = 120, Default = 30, Rounding = 0, Callback = function(v) FacingVisual.BoxLength = v end })
     D:AddSlider("BoxHeight", { Text = "Box Height", Min = 1, Max = 30,  Default = 8,  Rounding = 0, Callback = function(v) FacingVisual.BoxHeight = v end })
+    D:AddSlider("BoxTransparency", { Text = "Box Transparency (0 = solid, 1 = invisible)", Min = 0, Max = 1, Default = 0.9, Rounding = 2, Callback = function(v)
+        FacingVisual.BoxTransparency = v
+        for _, data in pairs(FacingVisual.boxes) do
+            if data and data.part then applyBoxAppearance(data, nil) end
+        end
+    end })
+    D:AddSlider("BoxOutline", { Text = "Box Outline Transparency", Min = 0, Max = 1, Default = 1, Rounding = 2, Callback = function(v)
+        FacingVisual.BoxOutlineTransparency = v
+        for _, data in pairs(FacingVisual.boxes) do
+            if data and data.part then applyBoxAppearance(data, nil) end
+        end
+    end })
     D:AddDropdown("BoxAppear", { Text = "Appear", Values = { "Always", "Box only appear on killer M1" }, Default = 1,
         Callback = function(v)
             FacingVisual.AppearMode = (v == "Always") and "Always" or "M1"
@@ -1584,7 +1675,8 @@ pcall(function()
     C:AddToggle("CircEnabled", { Text = "Show Circle", Default = false,
         Callback = function(v)
             FacingVisual.CircleEnabled = v
-            if KillersFolder then for _, k in ipairs(KillersFolder:GetChildren()) do
+            local kf = KillersFolder or (Workspace:FindFirstChild("Players") and Workspace.Players:FindFirstChild("Killers"))
+            if kf then for _, k in ipairs(kf:GetChildren()) do
                 if k:IsA("Model") then
                     if v then createCircle(k) else destroyCircle(k) end
                 end
@@ -1648,7 +1740,7 @@ pcall(function()
 end)
 
 -- =========================================================
--- KILLERS TAB — ported from CursedSaken + QTEs
+-- KILLERS TAB — CursedSaken port + QTEs
 -- =========================================================
 pcall(function()
     local VIM = game:GetService("VirtualInputManager")
@@ -1697,10 +1789,11 @@ pcall(function()
                 end
             end
             if now - AutoM1._lastFire < 1.9 then return end
+            local sf = SurvivorsFolder or (Workspace:FindFirstChild("Players") and Workspace.Players:FindFirstChild("Survivors"))
+            if not sf then return end
             local best, bestDist = nil, AutoM1.Distance
             local myPos = hrp.Position
-            if not SurvivorsFolder then return end
-            for _, s in ipairs(SurvivorsFolder:GetChildren()) do
+            for _, s in ipairs(sf:GetChildren()) do
                 if s:IsA("Model") then
                     local t = s:FindFirstChild("HumanoidRootPart")
                     local h = s:FindFirstChildOfClass("Humanoid")
@@ -1754,9 +1847,10 @@ pcall(function()
     local function dodgeSoundHook(snd)
         local id = tostring(snd.SoundId):match("%d+")
         if not id or not TRIGGER_SOUNDS[id] then return end
-        if not SurvivorsFolder then return end
+        local sf = SurvivorsFolder or (Workspace:FindFirstChild("Players") and Workspace.Players:FindFirstChild("Survivors"))
+        if not sf then return end
         local myRoot = getMyRoot(); if not myRoot then return end
-        for _, s in ipairs(SurvivorsFolder:GetChildren()) do
+        for _, s in ipairs(sf:GetChildren()) do
             if s:IsA("Model") and s ~= lp.Character then
                 local hrp = s:FindFirstChild("HumanoidRootPart")
                 local hum = s:FindFirstChildOfClass("Humanoid")
@@ -1824,8 +1918,9 @@ pcall(function()
     local function abUpdate()
         local hrp = getMyRoot(); if not hrp then return end
         local list = {}
-        if SurvivorsFolder then
-            for _, s in ipairs(SurvivorsFolder:GetChildren()) do
+        local sf = SurvivorsFolder or (Workspace:FindFirstChild("Players") and Workspace.Players:FindFirstChild("Survivors"))
+        if sf then
+            for _, s in ipairs(sf:GetChildren()) do
                 if s:IsA("Model") and string.lower(s.Name):gsub("%s+","") == "twotime" then
                     if s:FindFirstChild("HumanoidRootPart") then table.insert(list, s) end
                 end
@@ -1929,7 +2024,7 @@ pcall(function()
     ABSL:AddSlider("ABRange",  { Text="Cone / Circle Range", Min=5, Max=30, Default=10, Rounding=0, Callback=function(v) AntiBS.Range=v end })
     ABSL:AddSlider("ABAngle",  { Text="Cone Angle", Min=10, Max=180, Default=90, Rounding=0, Callback=function(v) AntiBS.Angle=v end })
 
-    -- QTEs (Auto Azure + Auto Nos Escape)
+    -- QTEs
     local QTE = { Auto=false, Method="Instance", Infinite=false, _hooked=false, _lastClick=0 }
     local NosEsc = { Enabled=false, _conn=nil, _lastRemote=0 }
     local isMobileQTE = UIS.TouchEnabled and not UIS.MouseEnabled
@@ -2094,9 +2189,10 @@ pcall(function()
             local state = c:GetAttribute("VoidRushState")
             if state ~= "Dashing" and state ~= "Charging" then return end
             local target
-            if Noli.AutoTarget and SurvivorsFolder then
+            local sf = SurvivorsFolder or (Workspace:FindFirstChild("Players") and Workspace.Players:FindFirstChild("Survivors"))
+            if Noli.AutoTarget and sf then
                 local best = math.huge
-                for _, s in ipairs(SurvivorsFolder:GetChildren()) do
+                for _, s in ipairs(sf:GetChildren()) do
                     if s:IsA("Model") then
                         local t = s:FindFirstChild("HumanoidRootPart")
                         local h = s:FindFirstChildOfClass("Humanoid")
@@ -2173,7 +2269,8 @@ pcall(function()
                     if pos then
                         local name = string.lower(m.Model.Name or "")
                         if name:find("nova") or name:find("star") or name:find("void") then
-                            for _, s in ipairs((SurvivorsFolder and SurvivorsFolder:GetChildren()) or {}) do
+                            local sf = SurvivorsFolder or (Workspace:FindFirstChild("Players") and Workspace.Players:FindFirstChild("Survivors"))
+                            for _, s in ipairs((sf and sf:GetChildren()) or {}) do
                                 local t = s:FindFirstChild("HumanoidRootPart")
                                 if t and (t.Position - pos).Magnitude <= 12 then
                                     if os.clock() - Nova._last > 0.1 then
@@ -2293,9 +2390,10 @@ pcall(function()
             if John.Enabled then
                 task.spawn(function()
                     local myRoot = getMyRoot()
-                    if SurvivorsFolder and myRoot then
+                    local sf = SurvivorsFolder or (Workspace:FindFirstChild("Players") and Workspace.Players:FindFirstChild("Survivors"))
+                    if sf and myRoot then
                         local best, bestD = nil, math.huge
-                        for _, s in ipairs(SurvivorsFolder:GetChildren()) do
+                        for _, s in ipairs(sf:GetChildren()) do
                             local t = s:FindFirstChild("HumanoidRootPart")
                             local h = s:FindFirstChildOfClass("Humanoid")
                             if t and h and h.Health > 0 then
@@ -2350,9 +2448,10 @@ pcall(function()
                     if X1.Enabled then
                         local myRoot = getMyRoot()
                         local target
-                        if myRoot and SurvivorsFolder then
+                        local sf = SurvivorsFolder or (Workspace:FindFirstChild("Players") and Workspace.Players:FindFirstChild("Survivors"))
+                        if myRoot and sf then
                             local bestD = math.huge
-                            for _, s in ipairs(SurvivorsFolder:GetChildren()) do
+                            for _, s in ipairs(sf:GetChildren()) do
                                 local t = s:FindFirstChild("HumanoidRootPart")
                                 local h = s:FindFirstChildOfClass("Humanoid")
                                 if t and h and h.Health > 0 then
@@ -2401,8 +2500,9 @@ pcall(function()
                     while tick() < until_ and Sixer.Enabled do
                         local myRoot = getMyRoot()
                         local best, bestD = nil, math.huge
-                        if myRoot and SurvivorsFolder then
-                            for _, s in ipairs(SurvivorsFolder:GetChildren()) do
+                        local sf = SurvivorsFolder or (Workspace:FindFirstChild("Players") and Workspace.Players:FindFirstChild("Survivors"))
+                        if myRoot and sf then
+                            for _, s in ipairs(sf:GetChildren()) do
                                 local t = s:FindFirstChild("HumanoidRootPart")
                                 local h = s:FindFirstChildOfClass("Humanoid")
                                 if t and h and h.Health > 0 then
@@ -2499,8 +2599,9 @@ pcall(function()
     end
     local function azureFindTarget(myPos, maxDist)
         local best, bestD = nil, maxDist
-        if not SurvivorsFolder then return nil end
-        for _, s in ipairs(SurvivorsFolder:GetChildren()) do
+        local sf = SurvivorsFolder or (Workspace:FindFirstChild("Players") and Workspace.Players:FindFirstChild("Survivors"))
+        if not sf then return nil end
+        for _, s in ipairs(sf:GetChildren()) do
             local t = s:FindFirstChild("HumanoidRootPart")
             local h = s:FindFirstChildOfClass("Humanoid")
             if t and h and h.Health > 0 and not s:GetAttribute("Undetectable") then
@@ -2612,7 +2713,7 @@ pcall(function()
 end)
 
 -- =========================================================
--- VEERONICA TAB
+-- VEERONICA TAB (Auto Trick fixed: multi-location highlight + multi-method keypress)
 -- =========================================================
 pcall(function()
     local VIM = game:GetService("VirtualInputManager")
@@ -2652,11 +2753,8 @@ pcall(function()
     end
     local function veeIsVee()
         local c = lp.Character; if not c then return false end
-        return (c:GetAttribute("CharacterName") or c.Name) == "Veeronica"
-    end
-    local function veeHighlighted(c)
-        local h = c and c:FindFirstChild("Highlight")
-        return h ~= nil and h.Adornee == c
+        local name = c:GetAttribute("CharacterName") or c.Name
+        return name == "Veeronica"
     end
     local function veeKillers()
         if KillersFolder then return KillersFolder end
@@ -2664,20 +2762,84 @@ pcall(function()
         return p and p:FindFirstChild("Killers")
     end
 
+    local veeATDebug = { result = "not run" }
+    local function veeFindChaseHighlight(c)
+        if not c then return nil, "no character" end
+        local h = c:FindFirstChild("Highlight")
+        if h and h:IsA("Highlight") and (h.Adornee == c or h.Adornee == nil) then
+            return h, "char-direct"
+        end
+        for _, d in ipairs(c:GetDescendants()) do
+            if d:IsA("Highlight") and (d.Adornee == c or d.Adornee == nil) then
+                return d, "char-descendant"
+            end
+        end
+        local parent = c.Parent
+        if parent then
+            for _, d in ipairs(parent:GetChildren()) do
+                if d:IsA("Highlight") and d.Adornee == c then
+                    return d, "parent-folder"
+                end
+            end
+        end
+        local hrp = c:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            for _, d in ipairs(hrp:GetChildren()) do
+                if d:IsA("Highlight") then return d, "hrp" end
+            end
+        end
+        for _, d in ipairs(workspace:GetChildren()) do
+            if d:IsA("Highlight") and d.Adornee == c then
+                return d, "workspace"
+            end
+        end
+        local cam = workspace.CurrentCamera
+        if cam then
+            for _, d in ipairs(cam:GetChildren()) do
+                if d:IsA("Highlight") and d.Adornee == c then
+                    return d, "camera"
+                end
+            end
+        end
+        return nil, "no highlight found"
+    end
+    local function veeHighlighted(c)
+        local h, where = veeFindChaseHighlight(c)
+        veeATDebug.result = h and ("HIT: " .. tostring(where)) or "no highlight found"
+        return h ~= nil
+    end
+
     local function veeDoTrickInput()
-        if not UIS.TouchEnabled or UIS.MouseEnabled then
-            VIM:SendKeyEvent(true,  Enum.KeyCode.Space, false, game)
-            task.wait(0.05)
-            VIM:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
+        local isPC = (not UIS.TouchEnabled) or UIS.MouseEnabled
+        if isPC then
+            local ok = pcall(function()
+                VIM:SendKeyEvent(true, Enum.KeyCode.Space, false, false)
+                task.wait(0.05)
+                VIM:SendKeyEvent(false, Enum.KeyCode.Space, false, false)
+            end)
+            if ok then return end
+            if type(keypress) == "function" and type(keyrelease) == "function" then
+                pcall(function()
+                    keypress(Enum.KeyCode.Space)
+                    task.wait(0.05)
+                    keyrelease(Enum.KeyCode.Space)
+                end)
+                return
+            end
+            pcall(function()
+                VIM:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
+                task.wait(0.05)
+                VIM:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
+            end)
         else
             local pg = lp:FindFirstChild("PlayerGui")
             local m  = pg and pg:FindFirstChild("MainUI")
             local b  = m and m:FindFirstChild("SprintingButton")
             if b and getconnections then
-                for _, c in pairs(getconnections(b.MouseButton1Down)) do c:Fire() end
+                for _, c in pairs(getconnections(b.MouseButton1Down)) do pcall(function() c:Fire() end) end
                 task.wait(0.05)
-                for _, c in pairs(getconnections(b.MouseButton1Up))   do c:Fire() end
-                for _, c in pairs(getconnections(b.Activated))        do c:Fire() end
+                for _, c in pairs(getconnections(b.MouseButton1Up)) do pcall(function() c:Fire() end) end
+                for _, c in pairs(getconnections(b.Activated)) do pcall(function() c:Fire() end) end
             end
         end
     end
@@ -2685,7 +2847,8 @@ pcall(function()
         if V.AutoTrickThread then pcall(task.cancel, V.AutoTrickThread); V.AutoTrickThread = nil end
         if not V.AutoTrick then return end
         V.AutoTrickThread = task.spawn(function()
-            while task.wait() do
+            while true do
+                task.wait(0.05)
                 if not V.AutoTrick then break end
                 local c = lp.Character
                 if c and veeIsVee() and veeHighlighted(c) then
@@ -2845,6 +3008,21 @@ pcall(function()
     local VeeTab = Window:AddTab("Veeronica", "sparkles")
     local TR = VeeTab:AddLeftGroupbox("Tricks")
     TR:AddToggle("VAutoTrick", { Text="Auto Trick", Default=false, Callback=function(v) V.AutoTrick=v; veeAutoTrickStart() end })
+    TR:AddToggle("VAutoTrickDebug", { Text="Auto Trick Debug", Default=false, Callback=function(v)
+        if not v then return end
+        task.spawn(function()
+            while v do
+                task.wait(0.5)
+                if V.AutoTrick and lp.Character then
+                    print(("[AutoTrick] name=%s isVee=%s highlight=%s")
+                        :format(
+                            lp.Character:GetAttribute("CharacterName") or lp.Character.Name,
+                            tostring(veeIsVee()),
+                            tostring(veeATDebug.result)))
+                end
+            end
+        end)
+    end })
     TR:AddToggle("VSkateCtrl", { Text="Skate Control", Default=false, Callback=function(v) V.SkateControl=v; veeSkateCtrl(v) end })
     TR:AddToggle("VARebound", { Text="Anti Rebound", Default=false, Callback=function(v) V.AntiRebound=v; if v then veeInstallAR() end end })
     TR:AddToggle("VUSk8",     { Text="Unlimited Sk8", Default=false, Callback=function(v) V.UnlimitedSk8=v; if v then veeInstallUSk8() end end })

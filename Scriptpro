@@ -1,13 +1,7 @@
--- SCP Hub v3 — Forsaken Plus native UI · smaller loading screen
--- · M1 box: Forsaken Plus style (transient black ForceField @ QueryHitbox)
--- · Always box: SCP Hub long-detection style
--- · Loading: [🔒] SCP HUB at top, image 9859971171 (fallback 9859971166) bg
-
+-- SCP Hub v4 — self-contained floating UI (launcher can't fail)
+-- · Forsaken Plus style M1 box · SCP Hub style Always box · All features
 repeat task.wait() until game:IsLoaded()
 
--- =========================================================
--- Services
--- =========================================================
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService        = game:GetService("RunService")
@@ -31,15 +25,14 @@ if not PlayerGui then
     PlayerGui = lp:FindFirstChildOfClass("PlayerGui")
 end
 
-local BG_IMAGE     = "rbxassetid://9859971171"
+local BG_IMAGE = "rbxassetid://9859971171"
 local BG_IMAGE_ALT = "rbxassetid://9859971166"
-local BG_TRANSPARENCY = 0.82
 
 -- =========================================================
--- LOADING SCREEN (smaller)
+-- LOADING SCREEN (small)
 -- =========================================================
-local Loading = { StartTime = tick(), MinDisplayTime = 3.0, Progress = 0, Done = false,
-    GUI = nil, Bar = nil, Pct = nil, Status = nil }
+local Loading = { StartTime = tick(), MinDisplayTime = 2.8, Progress = 0, Done = false,
+    GUI=nil, Bar=nil, Pct=nil, Status=nil }
 
 local function safeTween(inst, ti, props)
     if not inst or not inst.Parent then return end
@@ -47,272 +40,607 @@ local function safeTween(inst, ti, props)
     if ok and t then pcall(function() t:Play() end) end
 end
 
-local function drawLockSmall(parent, accent, dark)
+local function drawLock(parent, accent, dark)
     local body = Instance.new("Frame")
     body.AnchorPoint = Vector2.new(0.5, 0)
     body.Position = UDim2.fromScale(0.5, 0.45)
     body.Size = UDim2.fromScale(0.72, 0.52)
-    body.BackgroundColor3 = accent
-    body.BorderSizePixel = 0
-    body.ZIndex = 5
+    body.BackgroundColor3 = accent; body.BorderSizePixel = 0; body.ZIndex = 5
     body.Parent = parent
-    local bc = Instance.new("UICorner") bc.CornerRadius = UDim.new(0, 6) bc.Parent = body
-
-    local shackle = Instance.new("Frame")
-    shackle.AnchorPoint = Vector2.new(0.5, 1)
-    shackle.Position = UDim2.fromScale(0.5, 0.48)
-    shackle.Size = UDim2.fromScale(0.48, 0.32)
-    shackle.BackgroundTransparency = 1
-    shackle.ZIndex = 4
-    shackle.Parent = parent
-
-    local sTop = Instance.new("Frame")
-    sTop.AnchorPoint = Vector2.new(0.5, 0)
-    sTop.Position = UDim2.fromScale(0.5, 0)
-    sTop.Size = UDim2.fromScale(1, 0.28)
-    sTop.BackgroundColor3 = accent
-    sTop.BorderSizePixel = 0
-    sTop.ZIndex = 4
-    sTop.Parent = shackle
-    local stc = Instance.new("UICorner") stc.CornerRadius = UDim.new(1, 0) stc.Parent = sTop
-
-    local sL = Instance.new("Frame")
-    sL.Position = UDim2.fromScale(0, 0)
-    sL.Size = UDim2.fromScale(0.22, 1)
-    sL.BackgroundColor3 = accent
-    sL.BorderSizePixel = 0
-    sL.ZIndex = 4
-    sL.Parent = shackle
-
-    local sR = Instance.new("Frame")
-    sR.AnchorPoint = Vector2.new(1, 0)
-    sR.Position = UDim2.fromScale(1, 0)
-    sR.Size = UDim2.fromScale(0.22, 1)
-    sR.BackgroundColor3 = accent
-    sR.BorderSizePixel = 0
-    sR.ZIndex = 4
-    sR.Parent = shackle
-
+    local bc = Instance.new("UICorner"); bc.CornerRadius = UDim.new(0, 5); bc.Parent = body
+    local sh = Instance.new("Frame")
+    sh.AnchorPoint = Vector2.new(0.5, 1); sh.Position = UDim2.fromScale(0.5, 0.48)
+    sh.Size = UDim2.fromScale(0.48, 0.32); sh.BackgroundTransparency = 1
+    sh.ZIndex = 4; sh.Parent = parent
+    local st = Instance.new("Frame")
+    st.AnchorPoint = Vector2.new(0.5, 0); st.Position = UDim2.fromScale(0.5, 0)
+    st.Size = UDim2.fromScale(1, 0.28); st.BackgroundColor3 = accent
+    st.BorderSizePixel = 0; st.ZIndex = 4; st.Parent = sh
+    local stc = Instance.new("UICorner"); stc.CornerRadius = UDim.new(1,0); stc.Parent = st
+    local sl = Instance.new("Frame"); sl.Position = UDim2.fromScale(0, 0)
+    sl.Size = UDim2.fromScale(0.22, 1); sl.BackgroundColor3 = accent
+    sl.BorderSizePixel = 0; sl.ZIndex = 4; sl.Parent = sh
+    local sr = Instance.new("Frame")
+    sr.AnchorPoint = Vector2.new(1, 0); sr.Position = UDim2.fromScale(1, 0)
+    sr.Size = UDim2.fromScale(0.22, 1); sr.BackgroundColor3 = accent
+    sr.BorderSizePixel = 0; sr.ZIndex = 4; sr.Parent = sh
     local kh = Instance.new("Frame")
-    kh.AnchorPoint = Vector2.new(0.5, 0.5)
-    kh.Position = UDim2.fromScale(0.5, 0.35)
-    kh.Size = UDim2.fromScale(0.22, 0.22)
-    kh.BackgroundColor3 = dark
-    kh.BorderSizePixel = 0
-    kh.ZIndex = 6
-    kh.Parent = body
-    local khc = Instance.new("UICorner") khc.CornerRadius = UDim.new(1, 0) khc.Parent = kh
-
+    kh.AnchorPoint = Vector2.new(0.5, 0.5); kh.Position = UDim2.fromScale(0.5, 0.35)
+    kh.Size = UDim2.fromScale(0.22, 0.22); kh.BackgroundColor3 = dark
+    kh.BorderSizePixel = 0; kh.ZIndex = 6; kh.Parent = body
+    local khc = Instance.new("UICorner"); khc.CornerRadius = UDim.new(1,0); khc.Parent = kh
     local ks = Instance.new("Frame")
-    ks.AnchorPoint = Vector2.new(0.5, 0)
-    ks.Position = UDim2.fromScale(0.5, 0.44)
-    ks.Size = UDim2.fromScale(0.06, 0.32)
-    ks.BackgroundColor3 = dark
-    ks.BorderSizePixel = 0
-    ks.ZIndex = 6
-    ks.Parent = body
+    ks.AnchorPoint = Vector2.new(0.5, 0); ks.Position = UDim2.fromScale(0.5, 0.44)
+    ks.Size = UDim2.fromScale(0.06, 0.32); ks.BackgroundColor3 = dark
+    ks.BorderSizePixel = 0; ks.ZIndex = 6; ks.Parent = body
+end
+
+local function makeGui(name)
+    local sg = Instance.new("ScreenGui")
+    sg.Name = name; sg.ResetOnSpawn = false
+    sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    sg.IgnoreGuiInset = true
+    local parented = false
+    pcall(function() if gethui then sg.Parent = gethui(); parented = sg.Parent ~= nil end end)
+    if not parented then
+        local ok = pcall(function() sg.Parent = CoreGui end)
+        if not ok or not sg.Parent then sg.Parent = PlayerGui end
+    end
+    return sg
 end
 
 local function createLoadingScreen()
     local ok = pcall(function()
-        local gui = Instance.new("ScreenGui")
-        gui.Name = "SCPHubLoading"
-        gui.IgnoreGuiInset = true
+        local gui = makeGui("SCPHubLoading")
         gui.DisplayOrder = 2147483647
-        gui.ResetOnSpawn = false
-        gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-        local parentOK = pcall(function() gui.Parent = CoreGui end)
-        if not parentOK or not gui.Parent then gui.Parent = PlayerGui end
 
-        -- dark base
         local bg = Instance.new("Frame")
-        bg.Size = UDim2.fromScale(1, 1)
-        bg.BackgroundColor3 = Color3.fromRGB(8, 8, 10)
-        bg.BorderSizePixel = 0
-        bg.ZIndex = 1
-        bg.Parent = gui
+        bg.Size = UDim2.fromScale(1,1); bg.BackgroundColor3 = Color3.fromRGB(8,8,10)
+        bg.BorderSizePixel = 0; bg.ZIndex = 1; bg.Parent = gui
 
-        -- bg image
         local bgImg = Instance.new("ImageLabel")
-        bgImg.Size = UDim2.fromScale(1, 1)
-        bgImg.BackgroundTransparency = 1
-        bgImg.Image = BG_IMAGE
-        bgImg.ImageTransparency = BG_TRANSPARENCY
-        bgImg.ScaleType = Enum.ScaleType.Crop
-        bgImg.ZIndex = 2
-        bgImg.Parent = gui
+        bgImg.Size = UDim2.fromScale(1,1); bgImg.BackgroundTransparency = 1
+        bgImg.Image = BG_IMAGE; bgImg.ImageTransparency = 0.82
+        bgImg.ScaleType = Enum.ScaleType.Crop; bgImg.ZIndex = 2; bgImg.Parent = gui
         task.spawn(function()
-            local preOK = pcall(function() ContentProvider:PreloadAsync({ bgImg }) end)
+            local okp = pcall(function() ContentProvider:PreloadAsync({ bgImg }) end)
             local hasSize = false
             pcall(function() hasSize = bgImg.ImageRectSize.X > 0 and bgImg.ImageRectSize.Y > 0 end)
-            if not preOK or not hasSize then
-                pcall(function() bgImg.Image = BG_IMAGE_ALT end)
-            end
+            if not okp or not hasSize then pcall(function() bgImg.Image = BG_IMAGE_ALT end) end
         end)
 
-        -- TOP: [lock] SCP HUB   (smaller: 0.32 x 0.075)
         local topBar = Instance.new("Frame")
-        topBar.AnchorPoint = Vector2.new(0.5, 0)
-        topBar.Position = UDim2.fromScale(0.5, 0.035)
+        topBar.AnchorPoint = Vector2.new(0.5, 0); topBar.Position = UDim2.fromScale(0.5, 0.035)
         topBar.Size = UDim2.fromScale(0.34, 0.075)
-        topBar.BackgroundTransparency = 1
-        topBar.ZIndex = 5
-        topBar.Parent = gui
+        topBar.BackgroundTransparency = 1; topBar.ZIndex = 5; topBar.Parent = gui
 
         local lockBox = Instance.new("Frame")
-        lockBox.Name = "LockBox"
-        lockBox.AnchorPoint = Vector2.new(1, 0.5)
-        lockBox.Position = UDim2.fromScale(0.5, 0.5)
-        lockBox.Size = UDim2.fromScale(0.24, 0.92)
-        lockBox.BackgroundTransparency = 1
-        lockBox.ZIndex = 5
-        lockBox.Parent = topBar
-        local la = Instance.new("UIAspectRatioConstraint") la.AspectRatio = 1 la.Parent = lockBox
-        drawLockSmall(lockBox, Color3.fromRGB(220, 40, 40), Color3.fromRGB(15, 15, 18))
+        lockBox.AnchorPoint = Vector2.new(1, 0.5); lockBox.Position = UDim2.fromScale(0.5, 0.5)
+        lockBox.Size = UDim2.fromScale(0.24, 0.92); lockBox.BackgroundTransparency = 1
+        lockBox.ZIndex = 5; lockBox.Parent = topBar
+        local la = Instance.new("UIAspectRatioConstraint"); la.AspectRatio = 1; la.Parent = lockBox
+        drawLock(lockBox, Color3.fromRGB(220,40,40), Color3.fromRGB(15,15,18))
 
-        local topTitle = Instance.new("TextLabel")
-        topTitle.AnchorPoint = Vector2.new(0, 0.5)
-        topTitle.Position = UDim2.fromScale(0.53, 0.5)
-        topTitle.Size = UDim2.fromScale(0.45, 0.9)
-        topTitle.BackgroundTransparency = 1
-        topTitle.Font = Enum.Font.GothamBold
-        topTitle.Text = "SCP HUB"
-        topTitle.TextColor3 = Color3.fromRGB(220, 40, 40)
-        topTitle.TextScaled = true
-        topTitle.TextXAlignment = Enum.TextXAlignment.Left
-        topTitle.TextStrokeTransparency = 0.4
-        topTitle.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-        topTitle.ZIndex = 5
-        topTitle.Parent = topBar
+        local title = Instance.new("TextLabel")
+        title.AnchorPoint = Vector2.new(0, 0.5); title.Position = UDim2.fromScale(0.53, 0.5)
+        title.Size = UDim2.fromScale(0.45, 0.9); title.BackgroundTransparency = 1
+        title.Font = Enum.Font.GothamBold; title.Text = "SCP HUB"
+        title.TextColor3 = Color3.fromRGB(220,40,40); title.TextScaled = true
+        title.TextXAlignment = Enum.TextXAlignment.Left
+        title.TextStrokeTransparency = 0.4; title.TextStrokeColor3 = Color3.new(0,0,0)
+        title.ZIndex = 5; title.Parent = topBar
 
-        -- BOTTOM: bar + pct + status (smaller: 0.30 wide)
         local barBG = Instance.new("Frame")
-        barBG.AnchorPoint = Vector2.new(0.5, 0.5)
-        barBG.Position = UDim2.fromScale(0.5, 0.90)
+        barBG.AnchorPoint = Vector2.new(0.5, 0.5); barBG.Position = UDim2.fromScale(0.5, 0.90)
         barBG.Size = UDim2.fromScale(0.30, 0.011)
-        barBG.BackgroundColor3 = Color3.fromRGB(30, 30, 34)
-        barBG.BorderSizePixel = 0
-        barBG.ZIndex = 5
-        barBG.Parent = gui
-        local bc = Instance.new("UICorner") bc.CornerRadius = UDim.new(0, 6) bc.Parent = barBG
+        barBG.BackgroundColor3 = Color3.fromRGB(30,30,34)
+        barBG.BorderSizePixel = 0; barBG.ZIndex = 5; barBG.Parent = gui
+        local bc = Instance.new("UICorner"); bc.CornerRadius = UDim.new(0,6); bc.Parent = barBG
 
         local bar = Instance.new("Frame")
-        bar.Size = UDim2.fromScale(0, 1)
-        bar.BackgroundColor3 = Color3.fromRGB(200, 30, 30)
-        bar.BorderSizePixel = 0
-        bar.ZIndex = 6
-        bar.Parent = barBG
-        local fc = Instance.new("UICorner") fc.CornerRadius = UDim.new(0, 6) fc.Parent = bar
+        bar.Size = UDim2.fromScale(0,1); bar.BackgroundColor3 = Color3.fromRGB(200,30,30)
+        bar.BorderSizePixel = 0; bar.ZIndex = 6; bar.Parent = barBG
+        local fc = Instance.new("UICorner"); fc.CornerRadius = UDim.new(0,6); fc.Parent = bar
 
         local pct = Instance.new("TextLabel")
-        pct.AnchorPoint = Vector2.new(0.5, 0)
-        pct.Position = UDim2.fromScale(0.5, 0.918)
-        pct.Size = UDim2.fromScale(0.3, 0.025)
-        pct.BackgroundTransparency = 1
-        pct.Font = Enum.Font.Gotham
-        pct.Text = "0%"
-        pct.TextColor3 = Color3.fromRGB(200, 200, 200)
-        pct.TextScaled = true
-        pct.ZIndex = 5
-        pct.Parent = gui
+        pct.AnchorPoint = Vector2.new(0.5, 0); pct.Position = UDim2.fromScale(0.5, 0.918)
+        pct.Size = UDim2.fromScale(0.3, 0.025); pct.BackgroundTransparency = 1
+        pct.Font = Enum.Font.Gotham; pct.Text = "0%"
+        pct.TextColor3 = Color3.fromRGB(200,200,200); pct.TextScaled = true
+        pct.ZIndex = 5; pct.Parent = gui
 
         local status = Instance.new("TextLabel")
-        status.AnchorPoint = Vector2.new(0.5, 0)
-        status.Position = UDim2.fromScale(0.5, 0.945)
-        status.Size = UDim2.fromScale(0.5, 0.022)
-        status.BackgroundTransparency = 1
-        status.Font = Enum.Font.Gotham
-        status.Text = "Booting..."
-        status.TextColor3 = Color3.fromRGB(140, 140, 140)
-        status.TextScaled = true
-        status.ZIndex = 5
-        status.Parent = gui
+        status.AnchorPoint = Vector2.new(0.5, 0); status.Position = UDim2.fromScale(0.5, 0.945)
+        status.Size = UDim2.fromScale(0.5, 0.022); status.BackgroundTransparency = 1
+        status.Font = Enum.Font.Gotham; status.Text = "Booting..."
+        status.TextColor3 = Color3.fromRGB(140,140,140); status.TextScaled = true
+        status.ZIndex = 5; status.Parent = gui
 
-        Loading.GUI = gui
-        Loading.Bar = bar
-        Loading.Pct = pct
-        Loading.Status = status
+        Loading.GUI = gui; Loading.Bar = bar; Loading.Pct = pct; Loading.Status = status
     end)
-    if not ok then warn("[SCP Hub] Loading screen creation failed") end
+    if not ok then warn("[SCP Hub] loading screen failed") end
 end
 createLoadingScreen()
 
 local function setProgress(pct, status)
     Loading.Progress = math.clamp(tonumber(pct) or Loading.Progress, 0, 100)
     if Loading.GUI and Loading.GUI.Parent then
-        if Loading.Bar then
-            safeTween(Loading.Bar, TweenInfo.new(0.25, Enum.EasingStyle.Quad),
-                { Size = UDim2.fromScale(Loading.Progress / 100, 1) })
-        end
-        if Loading.Pct then pcall(function() Loading.Pct.Text = math.floor(Loading.Progress) .. "%" end) end
+        if Loading.Bar then safeTween(Loading.Bar, TweenInfo.new(0.25), { Size = UDim2.fromScale(Loading.Progress/100, 1) }) end
+        if Loading.Pct then pcall(function() Loading.Pct.Text = math.floor(Loading.Progress).."%" end) end
         if Loading.Status and status then pcall(function() Loading.Status.Text = tostring(status) end) end
     end
 end
-
 local function finishLoading()
     if Loading.Done then return end
     setProgress(100, "Ready!")
-    local elapsed = tick() - Loading.StartTime
-    if elapsed < Loading.MinDisplayTime then task.wait(Loading.MinDisplayTime - elapsed) end
+    local el = tick() - Loading.StartTime
+    if el < Loading.MinDisplayTime then task.wait(Loading.MinDisplayTime - el) end
     Loading.Done = true
     local gui = Loading.GUI; Loading.GUI = nil
     if not gui or not gui.Parent then return end
     pcall(function()
-        local ti = TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut)
+        local ti = TweenInfo.new(0.5)
         for _, d in ipairs(gui:GetDescendants()) do
             if d:IsA("Frame") then safeTween(d, ti, { BackgroundTransparency = 1 })
             elseif d:IsA("TextLabel") or d:IsA("TextButton") then
                 safeTween(d, ti, { TextTransparency = 1, TextStrokeTransparency = 1, BackgroundTransparency = 1 })
             elseif d:IsA("ImageLabel") then safeTween(d, ti, { ImageTransparency = 1 }) end
         end
-        task.wait(0.7)
-        if gui and gui.Parent then gui:Destroy() end
+        task.wait(0.6); if gui and gui.Parent then gui:Destroy() end
+    end)
+end
+setProgress(10, "Init...")
+
+-- =========================================================
+-- MAIN UI (self-contained floating launcher + panel)
+-- =========================================================
+local UI = {
+    Launcher = nil, Panel = nil, Content = nil, Open = false,
+    BgImage = nil, _layoutOrder = 0,
+    BindToggle = "RightShift",
+    _dragStart = nil, _dragOrigin = nil, _launcherDrag = nil, _launcherOrigin = nil,
+    _launcherMoved = false,
+}
+
+local PANEL_W, PANEL_H = 340, 440
+
+local function buildUI()
+    local sg = makeGui("SCPHubUI")
+    sg.DisplayOrder = 1000
+    UI.Screen = sg
+
+    -- Launcher button (small circular, draggable)
+    local btn = Instance.new("TextButton")
+    btn.Name = "Launcher"
+    btn.AnchorPoint = Vector2.new(1, 0.5)
+    btn.Position = UDim2.new(1, -16, 0.5, 0)
+    btn.Size = UDim2.fromOffset(52, 52)
+    btn.BackgroundColor3 = Color3.fromRGB(20, 20, 22)
+    btn.BorderSizePixel = 0
+    btn.AutoButtonColor = false
+    btn.Text = ""
+    btn.Active = true
+    btn.ZIndex = 100
+    btn.Parent = sg
+    local bc = Instance.new("UICorner"); bc.CornerRadius = UDim.new(1, 0); bc.Parent = btn
+    local stroke = Instance.new("UIStroke"); stroke.Color = Color3.fromRGB(200, 40, 40)
+    stroke.Thickness = 2; stroke.Transparency = 0.2; stroke.Parent = btn
+
+    -- lock icon in button
+    local iconBox = Instance.new("Frame")
+    iconBox.AnchorPoint = Vector2.new(0.5, 0.5); iconBox.Position = UDim2.fromScale(0.5, 0.5)
+    iconBox.Size = UDim2.fromScale(0.62, 0.62); iconBox.BackgroundTransparency = 1
+    iconBox.ZIndex = 101; iconBox.Parent = btn
+    local ia = Instance.new("UIAspectRatioConstraint"); ia.AspectRatio = 1; ia.Parent = iconBox
+    drawLock(iconBox, Color3.fromRGB(220, 40, 40), Color3.fromRGB(15, 15, 18))
+
+    UI.Launcher = btn
+
+    -- Panel
+    local panel = Instance.new("Frame")
+    panel.Name = "Panel"
+    panel.AnchorPoint = Vector2.new(1, 0.5)
+    panel.Position = UDim2.new(1, -80, 0.5, 0)
+    panel.Size = UDim2.fromOffset(0, PANEL_H)
+    panel.BackgroundColor3 = Color3.fromRGB(14, 14, 16)
+    panel.BorderSizePixel = 0
+    panel.ClipsDescendants = true
+    panel.ZIndex = 90
+    panel.Visible = false
+    panel.Parent = sg
+    local pc = Instance.new("UICorner"); pc.CornerRadius = UDim.new(0, 10); pc.Parent = panel
+    local ps = Instance.new("UIStroke"); ps.Color = Color3.fromRGB(200, 40, 40)
+    ps.Thickness = 1.5; ps.Transparency = 0.3; ps.Parent = panel
+    UI.Panel = panel
+
+    -- Panel bg image (subtle)
+    local pbg = Instance.new("ImageLabel")
+    pbg.Size = UDim2.fromScale(1, 1)
+    pbg.BackgroundTransparency = 1
+    pbg.Image = BG_IMAGE
+    pbg.ImageTransparency = 0.88
+    pbg.ScaleType = Enum.ScaleType.Crop
+    pbg.ZIndex = 0
+    pbg.Active = false
+    pbg.Parent = panel
+    pbg.ClipsDescendants = true
+
+    -- Header
+    local header = Instance.new("Frame")
+    header.Size = UDim2.new(1, 0, 0, 40)
+    header.BackgroundColor3 = Color3.fromRGB(20, 20, 22)
+    header.BorderSizePixel = 0
+    header.ZIndex = 95
+    header.Parent = panel
+    local hc = Instance.new("UICorner"); hc.CornerRadius = UDim.new(0, 10); hc.Parent = header
+    local hfill = Instance.new("Frame")
+    hfill.Size = UDim2.new(1, 0, 0, 20); hfill.Position = UDim2.new(0, 0, 1, -20)
+    hfill.BackgroundColor3 = Color3.fromRGB(20, 20, 22); hfill.BorderSizePixel = 0
+    hfill.ZIndex = 95; hfill.Parent = header
+
+    local hTitle = Instance.new("TextLabel")
+    hTitle.Position = UDim2.new(0, 14, 0, 0)
+    hTitle.Size = UDim2.new(1, -60, 1, 0)
+    hTitle.BackgroundTransparency = 1
+    hTitle.Font = Enum.Font.GothamBold
+    hTitle.TextSize = 15
+    hTitle.TextColor3 = Color3.fromRGB(230, 230, 230)
+    hTitle.TextXAlignment = Enum.TextXAlignment.Left
+    hTitle.Text = "SCP HUB"
+    hTitle.ZIndex = 96
+    hTitle.Parent = header
+
+    local close = Instance.new("TextButton")
+    close.AnchorPoint = Vector2.new(1, 0.5)
+    close.Position = UDim2.new(1, -10, 0.5, 0)
+    close.Size = UDim2.fromOffset(28, 28)
+    close.BackgroundColor3 = Color3.fromRGB(40, 20, 20)
+    close.BorderSizePixel = 0
+    close.Font = Enum.Font.GothamBold
+    close.TextSize = 14
+    close.TextColor3 = Color3.fromRGB(230, 100, 100)
+    close.Text = "X"
+    close.ZIndex = 96
+    close.Parent = header
+    local cbc = Instance.new("UICorner"); cbc.CornerRadius = UDim.new(1, 0); cbc.Parent = close
+    close.MouseButton1Click:Connect(function() UI:SetOpen(false) end)
+
+    -- Content scroll
+    local scroll = Instance.new("ScrollingFrame")
+    scroll.Name = "Content"
+    scroll.Position = UDim2.new(0, 0, 0, 40)
+    scroll.Size = UDim2.new(1, 0, 1, -40)
+    scroll.BackgroundTransparency = 1
+    scroll.BorderSizePixel = 0
+    scroll.ScrollBarThickness = 5
+    scroll.ScrollBarImageColor3 = Color3.fromRGB(200, 40, 40)
+    scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+    scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    scroll.ZIndex = 92
+    scroll.Parent = panel
+    UI.Content = scroll
+
+    local pad = Instance.new("UIPadding")
+    pad.PaddingTop = UDim.new(0, 8)
+    pad.PaddingBottom = UDim.new(0, 8)
+    pad.PaddingLeft = UDim.new(0, 10)
+    pad.PaddingRight = UDim.new(0, 10)
+    pad.Parent = scroll
+
+    local ll = Instance.new("UIListLayout")
+    ll.SortOrder = Enum.SortOrder.LayoutOrder
+    ll.Padding = UDim.new(0, 6)
+    ll.Parent = scroll
+
+    -- Launcher drag + click (drag distinguishes move vs tap)
+    local pressOrigin
+    btn.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+           or input.UserInputType == Enum.UserInputType.Touch then
+            pressOrigin = input.Position
+            UI._launcherOrigin = btn.Position
+            UI._launcherMoved = false
+            UI._launcherDrag = true
+        end
+    end)
+    UIS.InputChanged:Connect(function(input)
+        if UI._launcherDrag and UI._launcherOrigin and
+           (input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - pressOrigin
+            if delta.Magnitude > 6 then UI._launcherMoved = true end
+            if UI._launcherMoved then
+                local np = UDim2.new(
+                    UI._launcherOrigin.X.Scale, UI._launcherOrigin.X.Offset + delta.X,
+                    UI._launcherOrigin.Y.Scale, UI._launcherOrigin.Y.Offset + delta.Y)
+                btn.Position = np
+            end
+        end
+    end)
+    UIS.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+           or input.UserInputType == Enum.UserInputType.Touch then
+            if UI._launcherDrag and not UI._launcherMoved then
+                UI:SetOpen(not UI.Open)
+            end
+            UI._launcherDrag = false
+        end
+    end)
+
+    -- Panel drag
+    local pDrag = false
+    local pOrigin, pOffset
+    header.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+           or input.UserInputType == Enum.UserInputType.Touch then
+            pDrag = true
+            pOrigin = input.Position
+            pOffset = UDim2.new(
+                panel.Position.X.Scale, panel.Position.X.Offset,
+                panel.Position.Y.Scale, panel.Position.Y.Offset)
+        end
+    end)
+    UIS.InputChanged:Connect(function(input)
+        if pDrag and pOffset and
+           (input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch) then
+            local d = input.Position - pOrigin
+            panel.Position = UDim2.new(
+                pOffset.X.Scale, pOffset.X.Offset + d.X,
+                pOffset.Y.Scale, pOffset.Y.Offset + d.Y)
+        end
+    end)
+    UIS.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+           or input.UserInputType == Enum.UserInputType.Touch then
+            pDrag = false
+        end
     end)
 end
 
-setProgress(6, "Loading game UI...")
+function UI:SetOpen(open)
+    self.Open = open
+    if open then
+        self.Panel.Visible = true
+        self.Panel.Size = UDim2.fromOffset(0, PANEL_H)
+        TweenService:Create(self.Panel, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+            { Size = UDim2.fromOffset(PANEL_W, PANEL_H) }):Play()
+    else
+        TweenService:Create(self.Panel, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+            { Size = UDim2.fromOffset(0, PANEL_H) }):Play()
+        task.delay(0.22, function()
+            if not self.Open then self.Panel.Visible = false end
+        end)
+    end
+end
+
+buildUI()
+
+-- keybind toggle
+UIS.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.KeyCode == Enum.KeyCode.RightShift then
+        UI:SetOpen(not UI.Open)
+    end
+end)
+
+-- row helpers
+local function nextOrder()
+    UI._layoutOrder = UI._layoutOrder + 1
+    return UI._layoutOrder
+end
+
+local function makeRow(title, desc, height)
+    height = height or 54
+    local row = Instance.new("Frame")
+    row.Name = title
+    row.Size = UDim2.new(1, 0, 0, height)
+    row.BackgroundColor3 = Color3.fromRGB(22, 22, 24)
+    row.BorderSizePixel = 0
+    row.LayoutOrder = nextOrder()
+    row.Parent = UI.Content
+    local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 6); c.Parent = row
+    local t = Instance.new("TextLabel")
+    t.BackgroundTransparency = 1
+    t.Position = UDim2.new(0, 12, 0, 6)
+    t.Size = UDim2.new(1, -110, 0, 18)
+    t.Font = Enum.Font.GothamBold
+    t.TextSize = 13
+    t.TextXAlignment = Enum.TextXAlignment.Left
+    t.TextColor3 = Color3.fromRGB(230, 230, 230)
+    t.Text = title
+    t.Parent = row
+    if desc then
+        local d = Instance.new("TextLabel")
+        d.BackgroundTransparency = 1
+        d.Position = UDim2.new(0, 12, 0, 24)
+        d.Size = UDim2.new(1, -110, 0, 24)
+        d.Font = Enum.Font.Gotham
+        d.TextSize = 11
+        d.TextXAlignment = Enum.TextXAlignment.Left
+        d.TextWrapped = true
+        d.TextColor3 = Color3.fromRGB(150, 150, 150)
+        d.Text = desc
+        d.Parent = row
+    end
+    return row
+end
+
+local function makeToggle(title, desc, default, callback)
+    local row = makeRow(title, desc); if not row then return end
+    local box = Instance.new("TextButton")
+    box.Size = UDim2.fromOffset(44, 24)
+    box.Position = UDim2.new(1, -54, 0.5, -12)
+    box.BackgroundColor3 = default and Color3.fromRGB(200, 40, 40) or Color3.fromRGB(40, 40, 44)
+    box.BorderSizePixel = 0
+    box.Text = ""
+    box.AutoButtonColor = false
+    box.Parent = row
+    local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(1, 0); c.Parent = box
+    local knob = Instance.new("Frame")
+    knob.Size = UDim2.fromOffset(18, 18)
+    knob.Position = default and UDim2.new(1, -20, 0.5, -9) or UDim2.new(0, 2, 0.5, -9)
+    knob.BackgroundColor3 = Color3.new(1,1,1); knob.BorderSizePixel = 0
+    knob.Parent = box
+    local kc = Instance.new("UICorner"); kc.CornerRadius = UDim.new(1, 0); kc.Parent = knob
+    local state = default
+    box.MouseButton1Click:Connect(function()
+        state = not state
+        box.BackgroundColor3 = state and Color3.fromRGB(200, 40, 40) or Color3.fromRGB(40, 40, 44)
+        TweenService:Create(knob, TweenInfo.new(0.12), {
+            Position = state and UDim2.new(1, -20, 0.5, -9) or UDim2.new(0, 2, 0.5, -9)
+        }):Play()
+        if callback then pcall(callback, state) end
+    end)
+end
+
+local function makeSlider(title, desc, min, max, default, callback)
+    local row = makeRow(title, desc); if not row then return end
+    local val = default
+    local lbl = Instance.new("TextLabel")
+    lbl.Position = UDim2.new(1, -150, 0, 6)
+    lbl.Size = UDim2.new(0, 140, 0, 14)
+    lbl.BackgroundTransparency = 1
+    lbl.Font = Enum.Font.Gotham
+    lbl.TextSize = 11
+    lbl.TextColor3 = Color3.fromRGB(200, 200, 200)
+    lbl.TextXAlignment = Enum.TextXAlignment.Right
+    lbl.Text = tostring(default)
+    lbl.Parent = row
+
+    local drag = Instance.new("TextButton")
+    drag.Size = UDim2.fromOffset(140, 8)
+    drag.Position = UDim2.new(1, -150, 0.5, 6)
+    drag.BackgroundColor3 = Color3.fromRGB(40, 40, 44)
+    drag.BorderSizePixel = 0
+    drag.Text = ""
+    drag.AutoButtonColor = false
+    drag.Parent = row
+    local dc = Instance.new("UICorner"); dc.CornerRadius = UDim.new(1, 0); dc.Parent = drag
+
+    local fill = Instance.new("Frame")
+    fill.Size = UDim2.new((default - min) / math.max(max - min, 0.001), 0, 1, 0)
+    fill.BackgroundColor3 = Color3.fromRGB(200, 40, 40)
+    fill.BorderSizePixel = 0
+    fill.Parent = drag
+    local fc = Instance.new("UICorner"); fc.CornerRadius = UDim.new(1, 0); fc.Parent = fill
+
+    local dragging = false
+    drag.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+           or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+        end
+    end)
+    UIS.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+           or input.UserInputType == Enum.UserInputType.Touch) then
+            local pct = math.clamp((input.Position.X - drag.AbsolutePosition.X) / math.max(drag.AbsoluteSize.X, 1), 0, 1)
+            val = min + (max - min) * pct
+            val = math.floor(val * 100 + 0.5) / 100
+            fill.Size = UDim2.new(pct, 0, 1, 0)
+            lbl.Text = tostring(val)
+            if callback then pcall(callback, val) end
+        end
+    end)
+    UIS.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+           or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+end
+
+local function makeDropdown(title, desc, options, default, callback)
+    local row = makeRow(title, desc); if not row then return end
+    local idx = 1
+    for i, v in ipairs(options) do if v == default then idx = i end end
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.fromOffset(110, 26)
+    btn.Position = UDim2.new(1, -120, 0.5, -13)
+    btn.BackgroundColor3 = Color3.fromRGB(40, 40, 44)
+    btn.BorderSizePixel = 0
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = 12
+    btn.TextColor3 = Color3.fromRGB(230, 230, 230)
+    btn.Text = options[idx]
+    btn.Parent = row
+    local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 6); c.Parent = btn
+    btn.MouseButton1Click:Connect(function()
+        idx = idx % #options + 1
+        btn.Text = options[idx]
+        if callback then pcall(callback, options[idx]) end
+    end)
+end
+
+local function makeButton(title, desc, callback)
+    local row = makeRow(title, desc); if not row then return end
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.fromOffset(76, 26)
+    b.Position = UDim2.new(1, -86, 0.5, -13)
+    b.BackgroundColor3 = Color3.fromRGB(200, 40, 40)
+    b.BorderSizePixel = 0
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = 12
+    b.TextColor3 = Color3.new(1,1,1)
+    b.Text = "Run"
+    b.Parent = row
+    local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 6); c.Parent = b
+    b.MouseButton1Click:Connect(function() if callback then pcall(callback) end end)
+end
+
+local function makeHeader(title)
+    local h = Instance.new("TextLabel")
+    h.Size = UDim2.new(1, 0, 0, 26)
+    h.BackgroundTransparency = 1
+    h.Font = Enum.Font.GothamBold
+    h.TextSize = 14
+    h.TextXAlignment = Enum.TextXAlignment.Left
+    h.TextColor3 = Color3.fromRGB(220, 40, 40)
+    h.Text = title
+    h.LayoutOrder = nextOrder()
+    h.Parent = UI.Content
+end
+
+local function makeLabel(text)
+    local l = Instance.new("TextLabel")
+    l.Size = UDim2.new(1, 0, 0, 22)
+    l.BackgroundTransparency = 1
+    l.Font = Enum.Font.Gotham
+    l.TextSize = 12
+    l.TextXAlignment = Enum.TextXAlignment.Left
+    l.TextColor3 = Color3.fromRGB(180, 180, 180)
+    l.Text = text
+    l.LayoutOrder = nextOrder()
+    l.Parent = UI.Content
+end
 
 -- =========================================================
--- Player / Folder bootstrap
+-- Game bootstrap
 -- =========================================================
 local MainUI  = PlayerGui:WaitForChild("MainUI", 120)
-local SideBar = MainUI and (MainUI:FindFirstChild("Sidebar") or MainUI:WaitForChild("Sidebar", 30))
-local Buttons = SideBar and (SideBar:FindFirstChild("Buttons") or SideBar:FindFirstChild("Middle")
-    or SideBar:WaitForChild("Buttons", 30) or SideBar:WaitForChild("Middle", 30))
-local MainButton = Buttons and (Buttons:FindFirstChild("Settings") or Buttons:FindFirstChild("Stats"))
-local SettingsMenu = MainUI and (MainUI:FindFirstChild("SettingsScreen") or MainUI:WaitForChild("SettingsScreen", 30))
-
 local PlayersFolder   = Workspace:FindFirstChild("Players")
 local KillersFolder   = PlayersFolder and PlayersFolder:FindFirstChild("Killers") or nil
 local SurvivorsFolder = PlayersFolder and PlayersFolder:FindFirstChild("Survivors") or nil
 local HitboxesFolder  = Workspace:FindFirstChild("Hitboxes")
 
-setProgress(12, "Hooking network...")
-
--- =========================================================
--- Network
--- =========================================================
 local RemoteEvent
 do
     local mods = ReplicatedStorage:FindFirstChild("Modules")
     local net1 = mods and mods:FindFirstChild("Network")
     local net2 = net1 and net1:FindFirstChild("Network")
     RemoteEvent = net2 and net2:FindFirstChild("RemoteEvent")
-    if not RemoteEvent then warn("[SCP Hub] RemoteEvent not found") end
 end
 
 local function buildBuffer(str)
     local bytes = { 3, #str, 0, 0, 0 }
-    for i = 1, #str do bytes[#bytes + 1] = string.byte(str, i) end
+    for i = 1, #str do bytes[#bytes+1] = string.byte(str, i) end
     local b = buffer.create(#bytes)
     for i = 1, #bytes do buffer.writeu8(b, i - 1, bytes[i]) end
     return b
 end
 local BLOCK_BUF = buildBuffer("Block")
 
--- =========================================================
--- Helpers
--- =========================================================
 local function getMyRole()
     local c = lp.Character
     local p = c and c.Parent
@@ -324,26 +652,13 @@ local function getMyRoot()
     return c and c:FindFirstChild("HumanoidRootPart") or nil
 end
 local function isSurvivor() return getMyRole() == "Survivors" end
-local function isKiller()   return getMyRole() == "Killers"   end
 
 local function hasHelplessEffect()
-    local char = lp.Character
-    if not char then return true end
+    local char = lp.Character; if not char then return true end
     local hum = char:FindFirstChildOfClass("Humanoid")
     if hum and hum.PlatformStand then return true end
-    for _, attr in ipairs({ "Helpless", "Grabbed", "Incapacitated", "BeingCarried", "Held" }) do
-        if char:GetAttribute(attr) then return true end
-    end
-    for _, fn in ipairs({ "StatusEffects","Status","Effects","Statuses","Debuffs","Debuff" }) do
-        local folder = char:FindFirstChild(fn)
-        if folder then
-            for _, v in ipairs(folder:GetChildren()) do
-                local n = v.Name:lower()
-                if n:find("helpless",1,true) or n:find("grabbed",1,true)
-                   or n:find("held",1,true) or n:find("carried",1,true)
-                   or n:find("incap",1,true) then return true end
-            end
-        end
+    for _, a in ipairs({"Helpless","Grabbed","Incapacitated","BeingCarried","Held"}) do
+        if char:GetAttribute(a) then return true end
     end
     return false
 end
@@ -351,14 +666,10 @@ end
 local firesignalF = (typeof(firesignal) == "function") and firesignal
     or rawget(getfenv(), "FireSignal") or rawget(getfenv(), "firesignal")
 
-setProgress(20, "Loading killer data...")
-
--- =========================================================
--- Killers - attack map
--- =========================================================
+-- Attack anim map
 local BLOCKABLE_ATTACKS = {
-    ["slash"]=true, ["enragedslash"]=true, ["stab"]=true, ["attack"]=true,
-    ["punch"]=true, ["swing"]=true, ["golemslash"]=true,
+    ["slash"]=true,["enragedslash"]=true,["stab"]=true,["attack"]=true,
+    ["punch"]=true,["swing"]=true,["golemslash"]=true,
 }
 local CUSTOM_HITBOXES = {
     ["golemslash"] = { Size = Vector3.new(6, 2, 7), Offset = CFrame.new(0, 0, -5.5) },
@@ -381,10 +692,10 @@ local function buildAttackAnimMap()
             if ok and type(data) == "table" then
                 local anims = data.Animations or (data.Config and data.Config.Animations)
                 if type(anims) == "table" then
-                    for attackName, animValue in pairs(anims) do
-                        local key = tostring(attackName):lower()
+                    for k, av in pairs(anims) do
+                        local key = tostring(k):lower()
                         if BLOCKABLE_ATTACKS[key] then
-                            local ids = {}; collectAnimIds(animValue, ids)
+                            local ids = {}; collectAnimIds(av, ids)
                             for _, id in ipairs(ids) do ATTACK_ANIM_MAP[id] = key end
                         end
                     end
@@ -397,7 +708,7 @@ task.spawn(buildAttackAnimMap)
 task.spawn(function() while true do task.wait(30); pcall(buildAttackAnimMap) end end)
 
 -- =========================================================
--- BLOCK SYSTEM
+-- Block firing
 -- =========================================================
 local lastBlockFire = 0
 local BLOCK_METHOD = nil
@@ -434,58 +745,39 @@ local function fireBlock()
 end
 
 -- =========================================================
--- BOX SYSTEM
---   AppearMode == "M1"     -> Forsaken Plus style (transient black box)
---   AppearMode == "Always" -> SCP Hub style (long detection box)
+-- BOX system
 -- =========================================================
 local BoxCfg = {
-    Enabled       = false,
-    AppearMode    = "M1",     -- "M1" or "Always"
-    BoxColor      = Color3.fromRGB(255, 60, 60),
-    BoxWidth      = 12,
-    BoxHeight     = 8,
-    BoxLength     = 30,
-    BoxTransparency = 0.9,
-    OutlineTransparency = 1,
-    M1FlashDuration = 0.45,
-    M1FlashUntil  = setmetatable({}, { __mode = "k" }),
-    boxes         = {},     -- killer -> {part, highlight, conn}
+    Enabled = false, AppearMode = "M1",
+    BoxColor = Color3.fromRGB(255, 60, 60),
+    BoxWidth = 12, BoxHeight = 8, BoxLength = 30,
+    BoxTransparency = 0.9, OutlineTransparency = 1,
+    boxes = {},
 }
 
 local function ensureHitboxesFolder()
     if HitboxesFolder and HitboxesFolder.Parent then return HitboxesFolder end
     local h = Workspace:FindFirstChild("Hitboxes")
-    if not h then
-        h = Instance.new("Folder"); h.Name = "Hitboxes"; h.Parent = Workspace
-    end
+    if not h then h = Instance.new("Folder"); h.Name = "Hitboxes"; h.Parent = Workspace end
     HitboxesFolder = h
     return h
 end
 
--- Forsaken Plus style M1 box: black ForceField at killer's QueryHitbox forward
 local function spawnM1Box(killer)
     if not killer or not killer.Parent then return end
-    local qh = killer:FindFirstChild("QueryHitbox")
-    if not qh then return end
+    local qh = killer:FindFirstChild("QueryHitbox"); if not qh then return end
     local parent = ensureHitboxesFolder()
-    local part = Instance.new("Part")
-    part.Name = "SCPHubM1Box"
-    part.Anchored = true
-    part.CanCollide = false
-    part.CanTouch = false
-    part.CanQuery = false
-    part.CastShadow = false
-    part.Massless = true
-    part.Material = Enum.Material.ForceField
-    part.Color = Color3.fromRGB(0, 0, 0)
-    part.Transparency = 0.1
-    part.Size = Vector3.new(5.2, 6, 5.65) * 2.2
-    part.CFrame = qh.CFrame * CFrame.new(0, 0, -3.5)
-    part.Parent = parent
-    Debris:AddItem(part, 0.4)
+    local p = Instance.new("Part")
+    p.Name = "SCPHubM1Box"; p.Anchored = true; p.CanCollide = false
+    p.CanTouch = false; p.CanQuery = false; p.CastShadow = false; p.Massless = true
+    p.Material = Enum.Material.ForceField
+    p.Color = Color3.fromRGB(0, 0, 0); p.Transparency = 0.1
+    p.Size = Vector3.new(5.2, 6, 5.65) * 2.2
+    p.CFrame = qh.CFrame * CFrame.new(0, 0, -3.5)
+    p.Parent = parent
+    Debris:AddItem(p, 0.4)
 end
 
--- SCP Hub style always-on long detection box
 local function destroyLongBox(killer)
     local d = BoxCfg.boxes[killer]; if not d then return end
     if d.part and d.part.Parent then pcall(function() d.part:Destroy() end) end
@@ -493,7 +785,7 @@ local function destroyLongBox(killer)
     if d.conn then pcall(function() d.conn:Disconnect() end) end
     BoxCfg.boxes[killer] = nil
 end
-local function applyLongBoxAppearance(data, killer)
+local function applyLongBoxAppearance(data)
     local part, hl = data.part, data.hl
     if not part or not part.Parent then return end
     local show = BoxCfg.Enabled and BoxCfg.AppearMode == "Always"
@@ -517,16 +809,13 @@ local function createLongBox(killer)
     part.Size = Vector3.new(BoxCfg.BoxWidth, BoxCfg.BoxHeight, BoxCfg.BoxLength)
     part.Parent = killer
     local hl = Instance.new("Highlight")
-    hl.Name = "SCPHubLongBoxHL"
-    hl.FillTransparency = 1
-    hl.OutlineColor = BoxCfg.BoxColor
-    hl.OutlineTransparency = 1
+    hl.Name = "SCPHubLongBoxHL"; hl.FillTransparency = 1
+    hl.OutlineColor = BoxCfg.BoxColor; hl.OutlineTransparency = 1
     hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    hl.Adornee = part
-    hl.Parent = part
+    hl.Adornee = part; hl.Parent = part
     local data = { part = part, hl = hl, conn = nil }
     BoxCfg.boxes[killer] = data
-    applyLongBoxAppearance(data, killer)
+    applyLongBoxAppearance(data)
     data.conn = RunService.Heartbeat:Connect(function()
         if not killer.Parent or not part.Parent then destroyLongBox(killer); return end
         local hrp = killer:FindFirstChild("HumanoidRootPart"); if not hrp then return end
@@ -538,10 +827,9 @@ local function createLongBox(killer)
         part.CFrame = CFrame.lookAt(
             hrp.Position + flat * (BoxCfg.BoxLength * 0.5),
             hrp.Position + flat * (BoxCfg.BoxLength * 0.5 + 1))
-        applyLongBoxAppearance(data, killer)
+        applyLongBoxAppearance(data)
     end)
 end
-
 local function ensureBoxes()
     if not KillersFolder then return end
     for _, k in ipairs(KillersFolder:GetChildren()) do
@@ -556,9 +844,6 @@ local function ensureBoxes()
 end
 task.spawn(function() while true do task.wait(0.5); pcall(ensureBoxes) end end)
 
--- =========================================================
--- M1 hook
--- =========================================================
 local killerM1Conns = setmetatable({}, { __mode = "k" })
 local function hookKillerForM1(killer)
     if not killer or not killer:IsA("Model") then return end
@@ -575,9 +860,8 @@ local function hookKillerForM1(killer)
             if BoxCfg.AppearMode == "M1" then
                 spawnM1Box(killer)
             else
-                -- Always mode - just refresh appearance (box already visible)
                 local data = BoxCfg.boxes[killer]
-                if data then applyLongBoxAppearance(data, killer) end
+                if data then applyLongBoxAppearance(data) end
             end
         end)
         return true
@@ -585,13 +869,11 @@ local function hookKillerForM1(killer)
     if tryHook() then return end
     local c1, c2
     c1 = killer.ChildAdded:Connect(function() if tryHook() then
-        if c1 then c1:Disconnect() end
-        if c2 then c2:Disconnect() end
+        if c1 then c1:Disconnect() end; if c2 then c2:Disconnect() end
     end end)
     c2 = killer.DescendantAdded:Connect(function(d)
         if d:IsA("Animator") and tryHook() then
-            if c1 then c1:Disconnect() end
-            if c2 then c2:Disconnect() end
+            if c1 then c1:Disconnect() end; if c2 then c2:Disconnect() end
         end
     end)
 end
@@ -599,48 +881,43 @@ end
 -- =========================================================
 -- AUTO BLOCK
 -- =========================================================
-local AB_Cfg = { Enabled = false, WallCheck = true, SoundTrigger = true, AnimTrigger = true }
-
+local AB_Cfg = { Enabled=false, WallCheck=true, SoundTrigger=true, AnimTrigger=true }
 local RAY_LOS = RaycastParams.new()
 RAY_LOS.FilterType = Enum.RaycastFilterType.Exclude
 RAY_LOS.IgnoreWater = true
 
 local function performBlockCheck(killerModel)
-    if not AB_Cfg.Enabled or not isSurvivor() then return end
-    if hasHelplessEffect() then return end
+    if not AB_Cfg.Enabled or not isSurvivor() or hasHelplessEffect() then return end
     if not killerModel or not killerModel.Parent then return end
     local kRoot = killerModel:FindFirstChild("HumanoidRootPart"); if not kRoot then return end
-
     local look = kRoot.CFrame.LookVector
     local flat = Vector3.new(look.X, 0, look.Z)
     if flat.Magnitude < 1e-4 then return end
     flat = flat.Unit
 
-    local checkPart = Instance.new("Part")
-    checkPart.Anchored = true; checkPart.CanCollide = false; checkPart.CanTouch = false
-    checkPart.CanQuery = false; checkPart.Massless = true; checkPart.CastShadow = false
-    checkPart.Transparency = 1
-    checkPart.Size = Vector3.new(BoxCfg.BoxWidth, BoxCfg.BoxHeight, BoxCfg.BoxLength)
-    checkPart.CFrame = CFrame.lookAt(
+    local cp = Instance.new("Part")
+    cp.Anchored = true; cp.CanCollide = false; cp.CanTouch = false; cp.CanQuery = false
+    cp.Massless = true; cp.CastShadow = false; cp.Transparency = 1
+    cp.Size = Vector3.new(BoxCfg.BoxWidth, BoxCfg.BoxHeight, BoxCfg.BoxLength)
+    cp.CFrame = CFrame.lookAt(
         kRoot.Position + flat * (BoxCfg.BoxLength * 0.5),
         kRoot.Position + flat * (BoxCfg.BoxLength * 0.5 + 1))
-    checkPart.Parent = Workspace
+    cp.Parent = Workspace
 
     local inBox = false
     if lp.Character then
-        local params = OverlapParams.new()
-        params.FilterType = Enum.RaycastFilterType.Include
-        params.FilterDescendantsInstances = { lp.Character }
-        inBox = #Workspace:GetPartsInPart(checkPart, params) > 0
+        local p = OverlapParams.new()
+        p.FilterType = Enum.RaycastFilterType.Include
+        p.FilterDescendantsInstances = { lp.Character }
+        inBox = #Workspace:GetPartsInPart(cp, p) > 0
     end
-    checkPart:Destroy()
+    cp:Destroy()
 
     if inBox and AB_Cfg.WallCheck then
-        local myRoot = getMyRoot()
-        if myRoot then
-            local delta = kRoot.Position - myRoot.Position
+        local mr = getMyRoot()
+        if mr then
             RAY_LOS.FilterDescendantsInstances = { lp.Character, killerModel }
-            if Workspace:Raycast(myRoot.Position, delta, RAY_LOS) then inBox = false end
+            if Workspace:Raycast(mr.Position, kRoot.Position - mr.Position, RAY_LOS) then inBox = false end
         end
     end
     if inBox then fireBlock() end
@@ -652,21 +929,18 @@ local function performAnimBlockCheck(killer, attackType)
     local hum = killer:FindFirstChildOfClass("Humanoid")
     if not hum or hum.Health <= 0 then return end
     local qh = killer:FindFirstChild("QueryHitbox"); if not qh then return end
-
     local custom = CUSTOM_HITBOXES[attackType]
     local boxSize = custom and custom.Size or Vector3.new(5.2, 6, 5.65)
     local boxOffset = custom and custom.Offset or CFrame.new(0, 0, -3.5)
 
-    local params = OverlapParams.new()
-    params.FilterType = Enum.RaycastFilterType.Include
-    params.MaxParts = 1
+    local p = OverlapParams.new()
+    p.FilterType = Enum.RaycastFilterType.Include
+    p.MaxParts = 1
 
     for _ = 1, 12 do
         if hasHelplessEffect() or not lp.Character then return end
-        local myHb = lp.Character:FindFirstChild("QueryHitbox")
-        if not myHb then return end
-        params.FilterDescendantsInstances = { myHb }
-
+        local mh = lp.Character:FindFirstChild("QueryHitbox"); if not mh then return end
+        p.FilterDescendantsInstances = { mh }
         local part = Instance.new("Part")
         part.Anchored = true
         part.CanCollide = false; part.CanTouch = false; part.CanQuery = false
@@ -676,7 +950,7 @@ local function performAnimBlockCheck(killer, attackType)
         part.CFrame = qh.CFrame * boxOffset
         part.Transparency = 1
         part.Parent = Workspace
-        local hits = Workspace:GetPartsInPart(part, params)
+        local hits = Workspace:GetPartsInPart(part, p)
         part:Destroy()
         if #hits > 0 then fireBlock(); return end
         task.wait(0.02)
@@ -720,18 +994,16 @@ local LOG_IDS = false
 _G.SCPHub_LastLoggedID = nil
 
 local lastAutoBlock = setmetatable({}, { __mode = "k" })
-local AUTO_BLOCK_DEBOUNCE = 0.06
 local function tryAutoBlock(killer, soundId)
     if not AB_Cfg.Enabled or not isSurvivor() or hasHelplessEffect() then return end
     if not killer or not killer.Parent then return end
     if IGNORE_BEHEAD and soundId and BEHEAD_IDS[soundId] then return end
     local now = tick()
-    if lastAutoBlock[killer] and now - lastAutoBlock[killer] < AUTO_BLOCK_DEBOUNCE then return end
+    if lastAutoBlock[killer] and now - lastAutoBlock[killer] < 0.06 then return end
     lastAutoBlock[killer] = now
     performBlockCheck(killer)
 end
 
--- Trigger sound table (kept from SCP Hub)
 local TRIGGER_SOUNDS = {}
 for _, id in ipairs({
     "102228729296384","140242176732868","112809109188560","136323728355613","115026634746636",
@@ -769,7 +1041,7 @@ local function onSoundTrigger(sound)
     local kf = KillersFolder or (Workspace:FindFirstChild("Players") and Workspace.Players:FindFirstChild("Killers"))
     if not kf or anc.Parent ~= kf then return end
     _G.SCPHub_LastLoggedID = id
-    if LOG_IDS then print("[SCP Hub] Trigger sound: "..id.." | Killer: "..anc.Name) end
+    if LOG_IDS then print("[SCP Hub] Sound: "..id.." | Killer: "..anc.Name) end
     tryAutoBlock(anc, id)
 end
 local function hookSound(sound)
@@ -786,9 +1058,6 @@ local function hookSound(sound)
     if sound.IsPlaying then onSoundTrigger(sound) end
 end
 
--- =========================================================
--- Dynamic folder tracker
--- =========================================================
 task.spawn(function()
     local lastK, lastS
     while true do
@@ -809,14 +1078,12 @@ task.spawn(function()
                 end)
                 for _, k in ipairs(kf:GetChildren()) do
                     if k:IsA("Model") then
-                        hookKillerForM1(k)
-                        hookKillerForAttack(k)
+                        hookKillerForM1(k); hookKillerForAttack(k)
                     end
                 end
                 kf.ChildAdded:Connect(function(k)
                     if k:IsA("Model") then
-                        hookKillerForM1(k)
-                        hookKillerForAttack(k)
+                        hookKillerForM1(k); hookKillerForAttack(k)
                     end
                 end)
             end
@@ -824,34 +1091,35 @@ task.spawn(function()
     end
 end)
 
-setProgress(35, "Loading ESP...")
+setProgress(35, "ESP...")
 
 -- =========================================================
--- ESP (simplified - for the UI)
+-- ESP
 -- =========================================================
 local ESP_CFG = {
-    Killers   = { Enabled = true, Box = true, Chams = true, Name = true, Distance = true,
-                  FillColor = Color3.fromRGB(255, 40, 40), OutlineColor = Color3.fromRGB(255, 255, 255),
-                  TextColor = Color3.fromRGB(255, 200, 200), MaxDistance = 1500,
-                  FillTransparency = 0.55, OutlineTransparency = 0 },
-    Survivors = { Enabled = true, Box = true, Chams = true, Name = true, Distance = true,
-                  FillColor = Color3.fromRGB(40, 255, 90), OutlineColor = Color3.fromRGB(255, 255, 255),
-                  TextColor = Color3.fromRGB(200, 255, 200), MaxDistance = 1500,
-                  FillTransparency = 0.55, OutlineTransparency = 0 },
-    Generators = { Enabled = false },
-    Items = { Enabled = false },
+    Killers   = { Enabled=true, Box=true, Chams=true, Name=true, Distance=true,
+                  FillColor=Color3.fromRGB(255,40,40), OutlineColor=Color3.new(1,1,1),
+                  TextColor=Color3.fromRGB(255,200,200), MaxDistance=1500,
+                  FillTransparency=0.55, OutlineTransparency=0 },
+    Survivors = { Enabled=true, Box=true, Chams=true, Name=true, Distance=true,
+                  FillColor=Color3.fromRGB(40,255,90), OutlineColor=Color3.new(1,1,1),
+                  TextColor=Color3.fromRGB(200,255,200), MaxDistance=1500,
+                  FillTransparency=0.55, OutlineTransparency=0 },
+    Generators = { Enabled=false },
+    Items      = { Enabled=false },
 }
 local ESP_TRACK = setmetatable({}, { __mode = "k" })
+
 local function espHRP(m) return m and (m:FindFirstChild("HumanoidRootPart") or m.PrimaryPart) end
-local function espClear(model)
-    local t = ESP_TRACK[model]; if not t then return end
+local function espClear(m)
+    local t = ESP_TRACK[m]; if not t then return end
     for _, o in pairs(t) do if o then pcall(function() o:Destroy() end) end end
-    ESP_TRACK[model] = nil
+    ESP_TRACK[m] = nil
 end
-local function espEnsure(model, cfg)
-    if not model or not model.Parent then espClear(model); return end
-    local hrp = espHRP(model); if not hrp then espClear(model); return end
-    local t = ESP_TRACK[model]; if not t then t = {}; ESP_TRACK[model] = t end
+local function espEnsure(m, cfg)
+    if not m or not m.Parent then espClear(m); return end
+    local hrp = espHRP(m); if not hrp then espClear(m); return end
+    local t = ESP_TRACK[m]; if not t then t = {}; ESP_TRACK[m] = t end
     if t.Box and not t.Box.Parent then t.Box = nil end
     if t.Chams and not t.Chams.Parent then t.Chams = nil end
     if t.BB and not t.BB.Parent then t.BB = nil end
@@ -867,39 +1135,39 @@ local function espEnsure(model, cfg)
     if cfg.Chams then
         if not t.Chams then
             t.Chams = Instance.new("Highlight")
-            t.Chams.Adornee = model; t.Chams.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-            t.Chams.Parent = model
+            t.Chams.Adornee = m; t.Chams.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+            t.Chams.Parent = m
         end
         t.Chams.FillColor = cfg.FillColor
         t.Chams.OutlineColor = cfg.OutlineColor
-        t.Chams.FillTransparency = cfg.FillTransparency or 0.55
-        t.Chams.OutlineTransparency = cfg.OutlineTransparency or 0
+        t.Chams.FillTransparency = cfg.FillTransparency
+        t.Chams.OutlineTransparency = cfg.OutlineTransparency
     elseif t.Chams then pcall(function() t.Chams:Destroy() end); t.Chams = nil end
     if cfg.Name or cfg.Distance then
         if not t.BB then
-            local head = model:FindFirstChild("Head") or hrp
+            local head = m:FindFirstChild("Head") or hrp
             t.BB = Instance.new("BillboardGui")
-            t.BB.Adornee = head; t.BB.Size = UDim2.new(0, 200, 0, 50)
-            t.BB.StudsOffset = Vector3.new(0, 3, 0); t.BB.AlwaysOnTop = true
-            t.BB.MaxDistance = cfg.MaxDistance or 1500; t.BB.Parent = head
-            local lbl = Instance.new("TextLabel")
-            lbl.Name = "ESPLabel"; lbl.BackgroundTransparency = 1
-            lbl.Size = UDim2.new(1, 0, 1, 0); lbl.Font = Enum.Font.SourceSansBold
-            lbl.TextScaled = true; lbl.TextStrokeTransparency = 0.3
-            lbl.TextStrokeColor3 = Color3.new(0, 0, 0); lbl.Text = ""; lbl.Parent = t.BB
+            t.BB.Adornee = head; t.BB.Size = UDim2.new(0,200,0,50)
+            t.BB.StudsOffset = Vector3.new(0,3,0); t.BB.AlwaysOnTop = true
+            t.BB.MaxDistance = cfg.MaxDistance; t.BB.Parent = head
+            local l = Instance.new("TextLabel")
+            l.Name = "L"; l.BackgroundTransparency = 1
+            l.Size = UDim2.new(1,0,1,0); l.Font = Enum.Font.SourceSansBold
+            l.TextScaled = true; l.TextStrokeTransparency = 0.3
+            l.TextStrokeColor3 = Color3.new(0,0,0); l.Text = ""; l.Parent = t.BB
         end
-        local lbl = t.BB:FindFirstChild("ESPLabel")
-        if lbl then
-            local myRoot = getMyRoot()
-            local dist = myRoot and (hrp.Position - myRoot.Position).Magnitude or 0
+        local l = t.BB:FindFirstChild("L")
+        if l then
+            local mr = getMyRoot()
+            local dist = mr and (hrp.Position - mr.Position).Magnitude or 0
             local parts = {}
-            if cfg.Name then table.insert(parts, model.Name) end
+            if cfg.Name then table.insert(parts, m.Name) end
             if cfg.Distance then table.insert(parts, "["..math.floor(dist).." studs]") end
-            lbl.Text = table.concat(parts, "\n"); lbl.TextColor3 = cfg.TextColor
+            l.Text = table.concat(parts, "\n"); l.TextColor3 = cfg.TextColor
         end
-        t.BB.MaxDistance = cfg.MaxDistance or 1500
     elseif t.BB then pcall(function() t.BB:Destroy() end); t.BB = nil end
 end
+
 task.spawn(function()
     while true do
         task.wait(0.25)
@@ -920,20 +1188,19 @@ task.spawn(function()
     end
 end)
 
-setProgress(55, "Loading modules...")
-
 -- =========================================================
--- AUTO GENERATOR (Forsaken Plus method)
+-- AUTO GENERATOR
 -- =========================================================
-local AUTOGEN = { Enabled = false, Interval = 1.05, MaxDistance = 10, _thread = nil }
+local AUTOGEN = { Enabled=false, Interval=1.05, MaxDistance=10, _thread=nil }
 local function getIngameMap()
-    local map = Workspace:FindFirstChild("Map"); map = map and map:FindFirstChild("Ingame")
+    local map = Workspace:FindFirstChild("Map")
+    map = map and map:FindFirstChild("Ingame")
     return map and map:FindFirstChild("Map")
 end
 local function autogenFireOnce()
-    local map = getIngameMap(); local myRoot = getMyRoot()
-    if not map or not myRoot then return end
-    local pos = myRoot.Position
+    local map = getIngameMap(); local mr = getMyRoot()
+    if not map or not mr then return end
+    local pos = mr.Position
     local gens
     pcall(function() gens = map:QueryDescendants("Model#Generator:has(#Main)") end)
     if not gens then
@@ -973,7 +1240,7 @@ local Sprinting = nil
 task.spawn(function()
     pcall(function() Sprinting = require(ReplicatedStorage.Systems.Character.Game.Sprinting) end)
 end)
-local STAM = { Mode = "Regular", orig = nil, _thread = nil, _backup = nil }
+local STAM = { Mode="Regular", orig=nil, _thread=nil }
 task.spawn(function()
     while not Sprinting do task.wait(0.5) end
     STAM.orig = {
@@ -988,7 +1255,11 @@ local function stamSetMode(mode)
     if STAM._thread then task.cancel(STAM._thread); STAM._thread = nil end
     if mode == "Regular" and STAM.orig then
         pcall(function()
-            for k,v in pairs(STAM.orig) do if v ~= nil then Sprinting[k] = v end end
+            if STAM.orig.MaxStamina ~= nil then Sprinting.MaxStamina = STAM.orig.MaxStamina end
+            if STAM.orig.StaminaLoss ~= nil then Sprinting.StaminaLoss = STAM.orig.StaminaLoss end
+            if STAM.orig.StaminaGain ~= nil then Sprinting.StaminaGain = STAM.orig.StaminaGain end
+            if STAM.orig.SprintSpeed ~= nil then Sprinting.SprintSpeed = STAM.orig.SprintSpeed end
+            Sprinting.StaminaLossDisabled = STAM.orig.StaminaLossDisabled or false
         end)
     elseif mode == "Semi" then
         pcall(function()
@@ -997,13 +1268,14 @@ local function stamSetMode(mode)
             Sprinting.StaminaLossDisabled = false
         end)
     elseif mode == "Infinite" then
-        STAM._backup = Sprinting.StaminaLossDisabled
         pcall(function() Sprinting.StaminaLossDisabled = true end)
         STAM._thread = task.spawn(function()
             while STAM.Mode == "Infinite" do
                 pcall(function()
                     Sprinting.StaminaLossDisabled = true
-                    if Sprinting.Stamina ~= nil and Sprinting.MaxStamina then Sprinting.Stamina = Sprinting.MaxStamina end
+                    if Sprinting.Stamina ~= nil and Sprinting.MaxStamina then
+                        Sprinting.Stamina = Sprinting.MaxStamina
+                    end
                 end)
                 task.wait(0.15)
             end
@@ -1011,30 +1283,80 @@ local function stamSetMode(mode)
     end
 end
 
--- HDT
+-- HDT (full)
 local HDT_Trigger
 local HDT = {
-    Enabled = false, AutoTrigger = true, Speed = 12, StopDistance = 2,
-    DragDuration = 0.4, Cooldown = 27, MaxRange = 40,
-    _dragId = 0, _dragging = false, _conn = nil,
-    _lastFire = 0, _cooldownUntil = 0,
+    Enabled=false, AutoTrigger=true, Speed=12, StopDistance=2,
+    DragDuration=0.4, Cooldown=27, MaxRange=40,
+    _dragId=0, _dragging=false, _conn=nil, _lastFire=0, _cooldownUntil=0,
 }
 local function nearestKillerPart()
-    local myRoot = getMyRoot()
+    local mr = getMyRoot()
     local kf = KillersFolder or (Workspace:FindFirstChild("Players") and Workspace.Players:FindFirstChild("Killers"))
-    if not myRoot or not kf then return nil end
+    if not mr or not kf then return nil end
     local best, bd = nil, math.huge
     for _, k in ipairs(kf:GetChildren()) do
         if k:IsA("Model") and k ~= lp.Character then
             local hrp = k:FindFirstChild("HumanoidRootPart")
-            local hum = k:FindFirstChildOfClass("Humanoid")
-            if hrp and hum and hum.Health > 0 then
-                local d = (hrp.Position - myRoot.Position).Magnitude
+            local h = k:FindFirstChildOfClass("Humanoid")
+            if hrp and h and h.Health > 0 then
+                local d = (hrp.Position - mr.Position).Magnitude
                 if d < bd then best, bd = hrp, d end
             end
         end
     end
     return best
+end
+local function startDrag(target)
+    if not target or not target.Parent then return end
+    if hasHelplessEffect() then return end
+    local char = lp.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if not hrp or not hum then return end
+    if (target.Position - hrp.Position).Magnitude <= HDT.StopDistance + 0.5 then return end
+    HDT._dragId += 1
+    local myId = HDT._dragId
+    if HDT._conn then HDT._conn:Disconnect() HDT._conn = nil end
+    HDT._dragging = true
+    local saved = { walk=hum.WalkSpeed, auto=hum.AutoRotate }
+    hum.WalkSpeed = 0; hum.AutoRotate = false
+    local fin = false
+    local function cleanup()
+        if fin then return end
+        fin = true
+        if HDT._dragId ~= myId then return end
+        HDT._dragging = false
+        HDT._cooldownUntil = tick() + (HDT.Cooldown or 27)
+        if HDT._conn then HDT._conn:Disconnect() HDT._conn = nil end
+        if hrp and hrp.Parent then
+            hrp.AssemblyLinearVelocity = Vector3.zero
+            hrp.AssemblyAngularVelocity = Vector3.zero
+        end
+        if hum and hum.Parent then
+            pcall(function()
+                hum.WalkSpeed = saved.walk
+                hum.AutoRotate = saved.auto
+            end)
+        end
+    end
+    HDT._conn = RunService.Heartbeat:Connect(function(dt)
+        if hasHelplessEffect() then cleanup(); return end
+        if HDT._dragId ~= myId or not HDT._dragging then cleanup(); return end
+        if not (char and char.Parent and target and target.Parent) then cleanup(); return end
+        local mp = hrp.Position
+        local flat = Vector3.new(target.Position.X, mp.Y, target.Position.Z)
+        local delta = flat - mp
+        local dist = delta.Magnitude
+        if dist <= HDT.StopDistance then cleanup(); return end
+        local step = math.min(HDT.Speed * dt, dist - HDT.StopDistance)
+        hrp.CFrame = CFrame.lookAt(mp + delta.Unit * step, flat)
+        hrp.AssemblyLinearVelocity = Vector3.zero
+        hrp.AssemblyAngularVelocity = Vector3.zero
+    end)
+    task.delay(HDT.DragDuration, function()
+        if HDT._dragId == myId and HDT._dragging then cleanup() end
+    end)
 end
 HDT_Trigger = function(force)
     if not force and not HDT.Enabled then return end
@@ -1042,434 +1364,109 @@ HDT_Trigger = function(force)
     if tick() < HDT._cooldownUntil or HDT._dragging then return end
     if tick() - HDT._lastFire < 0.15 then return end
     local target = nearestKillerPart(); if not target then return end
-    local myRoot = getMyRoot()
-    if myRoot then
-        local d = (target.Position - myRoot.Position).Magnitude
+    local mr = getMyRoot()
+    if mr then
+        local d = (target.Position - mr.Position).Magnitude
         if d <= HDT.StopDistance + 0.5 or d > HDT.MaxRange then return end
     end
     HDT._lastFire = tick()
-    -- (full drag impl shortened - not critical to this response)
+    startDrag(target)
 end
 
+-- =========================================================
+-- BUILD MENU (into floating panel)
+-- =========================================================
+makeHeader("ESP")
+makeToggle("Killer ESP", nil, true, function(v) ESP_CFG.Killers.Enabled = v end)
+makeToggle("Survivor ESP", nil, true, function(v) ESP_CFG.Survivors.Enabled = v end)
+makeToggle("Name tags", nil, true, function(v)
+    ESP_CFG.Killers.Name = v; ESP_CFG.Survivors.Name = v
+end)
+makeToggle("Distance", nil, true, function(v)
+    ESP_CFG.Killers.Distance = v; ESP_CFG.Survivors.Distance = v
+end)
+
+makeHeader("Auto Block")
+makeToggle("Enable Auto Block", "Sound + animation detection", false, function(v) AB_Cfg.Enabled = v end)
+makeToggle("Sound Trigger", nil, true, function(v) AB_Cfg.SoundTrigger = v end)
+makeToggle("Animation Trigger", "Forsaken Plus sweep", true, function(v) AB_Cfg.AnimTrigger = v end)
+makeToggle("Wall Check", nil, true, function(v) AB_Cfg.WallCheck = v end)
+makeButton("Block Now", nil, function() task.spawn(fireBlock) end)
+
+makeHeader("Box")
+makeToggle("Show Box", nil, false, function(v)
+    BoxCfg.Enabled = v
+    if not v then for k in pairs(BoxCfg.boxes) do destroyLongBox(k) end
+    else task.spawn(ensureBoxes) end
+end)
+makeDropdown("Appear Mode", "M1 = FP-style transient / Always = SCP-Hub long",
+    {"M1", "Always"}, "M1", function(v)
+        BoxCfg.AppearMode = v
+        if v == "Always" then task.spawn(ensureBoxes)
+        else for k in pairs(BoxCfg.boxes) do destroyLongBox(k) end end
+    end)
+makeSlider("Box Width", nil, 1, 60, 12, function(v) BoxCfg.BoxWidth = v end)
+makeSlider("Box Length", nil, 1, 120, 30, function(v) BoxCfg.BoxLength = v end)
+makeSlider("Box Height", nil, 1, 30, 8, function(v) BoxCfg.BoxHeight = v end)
+makeSlider("Box Transparency", nil, 0, 1, 0.9, function(v) BoxCfg.BoxTransparency = v end)
+
+makeHeader("Auto Generator")
+makeToggle("Enable Auto Gen", nil, false, function(v) AUTOGEN.Enabled = v; autogenLoop() end)
+makeSlider("Range", nil, 5, 30, 10, function(v) AUTOGEN.MaxDistance = v end)
+makeSlider("Interval", nil, 0.5, 5, 1.05, function(v) AUTOGEN.Interval = v end)
+
+makeHeader("Stamina")
+makeDropdown("Preset", nil, {"Regular", "Semi", "Infinite"}, "Regular", function(v) stamSetMode(v) end)
+
+makeHeader("HDT")
+makeToggle("Enable HDT", nil, false, function(v) HDT.Enabled = v end)
+makeToggle("Auto on Block", nil, true, function(v) HDT.AutoTrigger = v end)
+makeSlider("Speed", nil, 2, 40, 12, function(v) HDT.Speed = v end)
+makeSlider("Stop Distance", nil, 0.5, 10, 2, function(v) HDT.StopDistance = v end)
+makeButton("Trigger Now", "Also Q keybind", function()
+    task.spawn(function() pcall(function() HDT_Trigger(true) end) end)
+end)
+
+makeHeader("Misc")
+makeButton("Fullbright", nil, function()
+    pcall(function()
+        Lighting.Ambient = Color3.new(1,1,1)
+        Lighting.OutdoorAmbient = Color3.new(1,1,1)
+        Lighting.Brightness = 2
+        Lighting.ClockTime = 12
+    end)
+end)
+makeButton("Show Chat", nil, function()
+    pcall(function()
+        local c = TextChatService:FindFirstChildOfClass("ChatWindowConfiguration")
+        local i = TextChatService:FindFirstChildOfClass("ChatInputBarConfiguration")
+        if c then c.Enabled = true end
+        if i then i.Enabled = true end
+    end)
+end)
+makeButton("Reset Character", nil, function()
+    local h = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
+    if h then h.Health = 0 end
+end)
+
+makeLabel("Q = HDT · RightShift = toggle panel")
+
+-- input for HDT
 if _G.SCPHubInput then pcall(function() _G.SCPHubInput:Disconnect() end) end
 _G.SCPHubInput = UIS.InputBegan:Connect(function(input, gpe)
     if gpe then return end
-    if input.KeyCode == Enum.KeyCode.Q then pcall(function() HDT_Trigger(true) end) end
-end)
-
-setProgress(75, "Building native UI...")
-
--- =========================================================
--- FORSAKEN PLUS NATIVE UI (ported)
--- =========================================================
-local PlusFolderSettings = Instance.new("Folder")
-PlusFolderSettings.Name = "Plus"
-PlusFolderSettings.Parent = lp:FindFirstChild("PlayerData") or lp
-
-local Values = {}
-local function GetValue(name, instOnly)
-    local i = Values[name]
-    if not i then i = PlusFolderSettings:FindFirstChild(name, true); Values[name] = i end
-    return instOnly and i or (i and i.Value)
-end
-
-local ThreadBindable = Instance.new("BindableEvent")
-task.spawn(function() while task.wait(0.1) do ThreadBindable:Fire() end end)
-
--- Try to build the native sidebar button
-local plusButton, plusMenu
-local uiOK = false
-do
-    local ok = pcall(function()
-        local templatesRoot = ReplicatedStorage:FindFirstChild("Systems")
-        templatesRoot = templatesRoot and templatesRoot:FindFirstChild("Player")
-        templatesRoot = templatesRoot and templatesRoot:FindFirstChild("UI")
-        templatesRoot = templatesRoot and templatesRoot:FindFirstChild("Menus")
-        templatesRoot = templatesRoot and templatesRoot:FindFirstChild("Settings")
-        local Templates = templatesRoot and templatesRoot:FindFirstChild("Templates")
-        if not Templates then error("no templates") end
-
-        if not MainButton or not SettingsMenu then error("no MainButton / SettingsMenu") end
-
-        -- sidebar button
-        plusButton = MainButton:Clone()
-        plusButton.Name = "SCPHubPlus"
-        plusButton.LayoutOrder = MainButton.LayoutOrder - 1
-        plusButton.Parent = Buttons
-        pcall(function()
-            local btn = plusButton:FindFirstChild("Button") or plusButton
-            local icon = btn:FindFirstChild("Icon", true)
-            if icon then icon.Image = "rbxassetid://118860705115878" end
-            local txt = btn:FindFirstChild("Name", true)
-            if txt then txt.Text = "SCP Hub" end
-        end)
-
-        -- menu
-        plusMenu = SettingsMenu:Clone()
-        plusMenu.Name = "SCPHubScreen"
-        plusMenu.Visible = false
-        plusMenu.Size = UDim2.new(1, -20, 0, 0)
-        plusMenu.Parent = MainUI
-        -- clean out original settings content except container
-        local sc = plusMenu:FindFirstChild("SettingsContainer", true)
-        if sc then
-            local contents = sc:FindFirstChild("Contents")
-            if contents then
-                for _, c in ipairs(contents:GetChildren()) do
-                    if not c:IsA("UIAspectRatioConstraint") then c:Destroy() end
-                end
-            end
-        end
-
-        uiOK = true
-    end)
-    if not ok then
-        warn("[SCP Hub] Native UI build failed - falling back to minimal label")
-        local sg = Instance.new("ScreenGui")
-        sg.Name = "SCPHubWarn"; sg.ResetOnSpawn = false
-        pcall(function() sg.Parent = CoreGui end)
-        if not sg.Parent then sg.Parent = PlayerGui end
-        local lbl = Instance.new("TextLabel")
-        lbl.Size = UDim2.new(0, 320, 0, 40)
-        lbl.Position = UDim2.new(1, -330, 0, 10)
-        lbl.BackgroundColor3 = Color3.fromRGB(20,20,20)
-        lbl.BorderSizePixel = 0
-        lbl.TextColor3 = Color3.fromRGB(230, 60, 60)
-        lbl.Font = Enum.Font.GothamBold
-        lbl.TextSize = 14
-        lbl.Text = "SCP Hub: game UI unavailable - features still active"
-        lbl.Parent = sg
-    end
-end
-
--- Simple toggle button handler
-local uiOpen = false
-if uiOK then
-    pcall(function()
-        local btn = plusButton:FindFirstChild("Button") or plusButton
-        btn.MouseButton1Click:Connect(function()
-            uiOpen = not uiOpen
-            if uiOpen then
-                plusMenu.Visible = true
-                TweenService:Create(plusMenu, TweenInfo.new(0.25),
-                    { Size = UDim2.new(1, -20, 1, -20) }):Play()
-            else
-                TweenService:Create(plusMenu, TweenInfo.new(0.25),
-                    { Size = UDim2.new(1, -20, 0, 0) }):Play()
-                task.delay(0.25, function() plusMenu.Visible = false end)
-            end
-        end)
-    end)
-end
-
--- Build a settings panel inside the menu using scroll + list (simpler than native templates)
-local Contents
-if uiOK then
-    local sc = plusMenu:FindFirstChild("SettingsContainer", true)
-    Contents = sc and sc:FindFirstChild("Contents")
-    if Contents then
-        -- ensure scrolling + list layout
-        local existing = Contents:FindFirstChildOfClass("UIListLayout")
-        if not existing then
-            local ll = Instance.new("UIListLayout")
-            ll.SortOrder = Enum.SortOrder.LayoutOrder
-            ll.Padding = UDim.new(0, 6)
-            ll.Parent = Contents
-        end
-    end
-end
-
--- simple row builders
-local function makeRow(title, desc)
-    if not Contents then return nil end
-    local row = Instance.new("Frame")
-    row.Name = title
-    row.Size = UDim2.new(1, -20, 0, 56)
-    row.BackgroundColor3 = Color3.fromRGB(22, 22, 24)
-    row.BorderSizePixel = 0
-    row.LayoutOrder = 0
-    row.Parent = Contents
-    local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 6); c.Parent = row
-    local t = Instance.new("TextLabel")
-    t.Name = "Title"; t.BackgroundTransparency = 1
-    t.Position = UDim2.new(0, 12, 0, 6)
-    t.Size = UDim2.new(1, -110, 0, 20)
-    t.Font = Enum.Font.GothamBold; t.TextScaled = false
-    t.TextSize = 14; t.TextXAlignment = Enum.TextXAlignment.Left
-    t.TextColor3 = Color3.fromRGB(230, 230, 230); t.Text = title
-    t.Parent = row
-    if desc then
-        local d = Instance.new("TextLabel")
-        d.BackgroundTransparency = 1
-        d.Position = UDim2.new(0, 12, 0, 26)
-        d.Size = UDim2.new(1, -110, 0, 24)
-        d.Font = Enum.Font.Gotham; d.TextSize = 12
-        d.TextXAlignment = Enum.TextXAlignment.Left
-        d.TextWrapped = true
-        d.TextColor3 = Color3.fromRGB(150, 150, 150); d.Text = desc
-        d.Parent = row
-    end
-    return row
-end
-local function makeToggle(title, desc, default, callback)
-    local row = makeRow(title, desc); if not row then return end
-    local box = Instance.new("TextButton")
-    box.Size = UDim2.new(0, 48, 0, 26)
-    box.Position = UDim2.new(1, -60, 0.5, -13)
-    box.BackgroundColor3 = default and Color3.fromRGB(200, 40, 40) or Color3.fromRGB(40, 40, 44)
-    box.BorderSizePixel = 0
-    box.Text = ""; box.AutoButtonColor = false
-    box.Parent = row
-    local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(1, 0); c.Parent = box
-    local knob = Instance.new("Frame")
-    knob.Size = UDim2.new(0, 20, 0, 20)
-    knob.Position = default and UDim2.new(1, -22, 0.5, -10) or UDim2.new(0, 2, 0.5, -10)
-    knob.BackgroundColor3 = Color3.new(1,1,1); knob.BorderSizePixel = 0
-    knob.Parent = box
-    local kc = Instance.new("UICorner"); kc.CornerRadius = UDim.new(1, 0); kc.Parent = knob
-    local state = default
-    box.MouseButton1Click:Connect(function()
-        state = not state
-        box.BackgroundColor3 = state and Color3.fromRGB(200, 40, 40) or Color3.fromRGB(40, 40, 44)
-        TweenService:Create(knob, TweenInfo.new(0.15), {
-            Position = state and UDim2.new(1, -22, 0.5, -10) or UDim2.new(0, 2, 0.5, -10)
-        }):Play()
-        if callback then pcall(callback, state) end
-    end)
-end
-local function makeSlider(title, desc, min, max, default, callback)
-    local row = makeRow(title, desc); if not row then return end
-    local val = default
-    local drag = Instance.new("Frame")
-    drag.Size = UDim2.new(0, 140, 0, 6)
-    drag.Position = UDim2.new(1, -152, 0.5, -3)
-    drag.BackgroundColor3 = Color3.fromRGB(40, 40, 44)
-    drag.BorderSizePixel = 0
-    drag.Parent = row
-    local dc = Instance.new("UICorner"); dc.CornerRadius = UDim.new(1, 0); dc.Parent = drag
-    local fill = Instance.new("Frame")
-    fill.Size = UDim2.new((default - min) / math.max(max - min, 0.001), 0, 1, 0)
-    fill.BackgroundColor3 = Color3.fromRGB(200, 40, 40)
-    fill.BorderSizePixel = 0; fill.Parent = drag
-    local fc = Instance.new("UICorner"); fc.CornerRadius = UDim.new(1, 0); fc.Parent = fill
-    local lbl = Instance.new("TextLabel")
-    lbl.Position = UDim2.new(1, -152, 0, 4)
-    lbl.Size = UDim2.new(0, 140, 0, 16)
-    lbl.BackgroundTransparency = 1
-    lbl.Font = Enum.Font.Gotham; lbl.TextSize = 11
-    lbl.TextColor3 = Color3.fromRGB(200, 200, 200)
-    lbl.Text = tostring(default)
-    lbl.Parent = row
-    local dragging = false
-    drag.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-        end
-    end)
-    UIS.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            local mouseX = input.Position.X
-            local pct = math.clamp((mouseX - drag.AbsolutePosition.X) / drag.AbsoluteSize.X, 0, 1)
-            val = min + (max - min) * pct
-            val = math.floor(val * 100 + 0.5) / 100
-            fill.Size = UDim2.new(pct, 0, 1, 0)
-            lbl.Text = tostring(val)
-            if callback then pcall(callback, val) end
-        end
-    end)
-    UIS.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = false
-        end
-    end)
-end
-local function makeDropdown(title, desc, options, default, callback)
-    local row = makeRow(title, desc); if not row then return end
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0, 110, 0, 26)
-    btn.Position = UDim2.new(1, -122, 0.5, -13)
-    btn.BackgroundColor3 = Color3.fromRGB(40, 40, 44)
-    btn.BorderSizePixel = 0
-    btn.Font = Enum.Font.Gotham; btn.TextSize = 12
-    btn.TextColor3 = Color3.fromRGB(230, 230, 230)
-    btn.Text = default or options[1]
-    btn.Parent = row
-    local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 6); c.Parent = btn
-    local idx = 1
-    for i, v in ipairs(options) do if v == default then idx = i end end
-    btn.MouseButton1Click:Connect(function()
-        idx = idx % #options + 1
-        btn.Text = options[idx]
-        if callback then pcall(callback, options[idx]) end
-    end)
-end
-local function makeButton(title, desc, callback)
-    local row = makeRow(title, desc); if not row then return end
-    local b = Instance.new("TextButton")
-    b.Size = UDim2.new(0, 80, 0, 26)
-    b.Position = UDim2.new(1, -92, 0.5, -13)
-    b.BackgroundColor3 = Color3.fromRGB(200, 40, 40)
-    b.BorderSizePixel = 0
-    b.Font = Enum.Font.GothamBold; b.TextSize = 12
-    b.TextColor3 = Color3.new(1,1,1); b.Text = "Run"
-    b.Parent = row
-    local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 6); c.Parent = b
-    b.MouseButton1Click:Connect(function() if callback then pcall(callback) end end)
-end
-local function makeHeader(title)
-    if not Contents then return end
-    local h = Instance.new("TextLabel")
-    h.Size = UDim2.new(1, -20, 0, 32)
-    h.BackgroundTransparency = 1
-    h.Font = Enum.Font.GothamBold; h.TextSize = 16
-    h.TextXAlignment = Enum.TextXAlignment.Left
-    h.TextColor3 = Color3.fromRGB(220, 40, 40)
-    h.Text = title
-    h.Parent = Contents
-end
-local function makeSpacer()
-    if not Contents then return end
-    local s = Instance.new("Frame")
-    s.Size = UDim2.new(1, 0, 0, 4)
-    s.BackgroundTransparency = 1
-    s.Parent = Contents
-end
-
--- =========================================================
--- BUILD MENU
--- =========================================================
-if uiOK and Contents then
-    -- ESP
-    makeHeader("ESP")
-    makeToggle("Killer ESP", "Track killers through walls", true, function(v)
-        ESP_CFG.Killers.Enabled = v
-    end)
-    makeToggle("Survivor ESP", "Track survivors through walls", true, function(v)
-        ESP_CFG.Survivors.Enabled = v
-    end)
-    makeToggle("Generator ESP", "Track generators", false, function(v)
-        ESP_CFG.Generators.Enabled = v
-    end)
-    makeSpacer()
-
-    -- Auto Block
-    makeHeader("Auto Block")
-    makeToggle("Enable Auto Block", "Sound + animation detection", false, function(v)
-        AB_Cfg.Enabled = v
-    end)
-    makeToggle("Sound Trigger", "Trigger on killer attack sounds", true, function(v)
-        AB_Cfg.SoundTrigger = v
-    end)
-    makeToggle("Animation Trigger", "Forsaken Plus style sweep", true, function(v)
-        AB_Cfg.AnimTrigger = v
-    end)
-    makeToggle("Wall Check", "Don't block through walls", true, function(v)
-        AB_Cfg.WallCheck = v
-    end)
-    makeButton("Block Now", "Fire block immediately", function() task.spawn(fireBlock) end)
-    makeSpacer()
-
-    -- Box
-    makeHeader("Box")
-    makeToggle("Show Box", "Detection box on killers", false, function(v)
-        BoxCfg.Enabled = v
-        if not v then
-            for k in pairs(BoxCfg.boxes) do destroyLongBox(k) end
-        else
-            task.spawn(ensureBoxes)
-        end
-    end)
-    makeDropdown("Appear Mode", "M1 = Forsaken Plus style / Always = SCP Hub style",
-        {"M1", "Always"}, "M1", function(v)
-            BoxCfg.AppearMode = v
-            if v == "Always" then
-                task.spawn(ensureBoxes)
-            else
-                for k in pairs(BoxCfg.boxes) do destroyLongBox(k) end
-            end
-        end)
-    makeSlider("Box Width", "Always-mode width", 1, 60, 12, function(v) BoxCfg.BoxWidth = v end)
-    makeSlider("Box Length", "Always-mode length", 1, 120, 30, function(v) BoxCfg.BoxLength = v end)
-    makeSlider("Box Height", "Always-mode height", 1, 30, 8, function(v) BoxCfg.BoxHeight = v end)
-    makeSlider("Box Transparency", "0=solid 1=invisible", 0, 1, 0.9, function(v) BoxCfg.BoxTransparency = v end)
-    makeSpacer()
-
-    -- Auto Gen
-    makeHeader("Auto Generator")
-    makeToggle("Enable Auto Gen", "Fire generator remotes when in range", false, function(v)
-        AUTOGEN.Enabled = v; autogenLoop()
-    end)
-    makeSlider("Range (studs)", "Max distance to generator", 5, 30, 10, function(v) AUTOGEN.MaxDistance = v end)
-    makeSlider("Interval (s)", "Time between fires", 0.5, 5, 1.05, function(v) AUTOGEN.Interval = v end)
-    makeSpacer()
-
-    -- Stamina
-    makeHeader("Stamina")
-    makeDropdown("Preset", "Regular / Semi / Infinite", {"Regular", "Semi", "Infinite"}, "Regular", function(v)
-        stamSetMode(v)
-    end)
-    makeSpacer()
-
-    -- HDT
-    makeHeader("HDT")
-    makeToggle("Enable HDT", "Auto-drag on block", false, function(v) HDT.Enabled = v end)
-    makeToggle("Auto on Block", "Trigger when auto-block fires", true, function(v) HDT.AutoTrigger = v end)
-    makeButton("Trigger Now (Q)", "Fire HDT once", function()
-        task.spawn(function() pcall(function() HDT_Trigger(true) end) end)
-    end)
-    makeSpacer()
-
-    -- Misc
-    makeHeader("Misc")
-    makeButton("Fullbright", "Brighten the map", function()
-        pcall(function()
-            Lighting.Ambient = Color3.new(1,1,1)
-            Lighting.OutdoorAmbient = Color3.new(1,1,1)
-            Lighting.Brightness = 2
-            Lighting.ClockTime = 12
-        end)
-    end)
-    makeButton("Show Chat", "Force chat visible", function()
-        pcall(function()
-            local c = TextChatService:FindFirstChildOfClass("ChatWindowConfiguration")
-            local i = TextChatService:FindFirstChildOfClass("ChatInputBarConfiguration")
-            if c then c.Enabled = true end
-            if i then i.Enabled = true end
-        end)
-    end)
-    makeButton("Reset Character", "Kill local player", function()
-        local h = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
-        if h then h.Health = 0 end
-    end)
-    makeSpacer()
-end
-
--- =========================================================
--- Inject image behind MainUI (menu bg)
--- =========================================================
-task.spawn(function()
-    task.wait(1)
-    if MainUI and not MainUI:FindFirstChild("SCPHubBg") then
-        local bg = Instance.new("ImageLabel")
-        bg.Name = "SCPHubBg"
-        bg.Size = UDim2.fromScale(1, 1)
-        bg.BackgroundTransparency = 1
-        bg.Image = BG_IMAGE
-        bg.ImageTransparency = BG_TRANSPARENCY
-        bg.ScaleType = Enum.ScaleType.Crop
-        bg.ZIndex = 0
-        bg.Active = false
-        bg.Parent = MainUI
+    if input.KeyCode == Enum.KeyCode.Q then
+        pcall(function() HDT_Trigger(true) end)
     end
 end)
 
 setProgress(95, "Finalizing...")
 task.wait(0.2)
-
-StarterGui:SetCore("SendNotification", {
-    Title = "SCP Hub",
-    Text = "Loaded successfully",
-    Duration = 3,
-})
-
+pcall(function()
+    StarterGui:SetCore("SendNotification", {
+        Title = "SCP Hub",
+        Text = "Loaded · RightShift to toggle",
+        Duration = 3,
+    })
+end)
 finishLoading()

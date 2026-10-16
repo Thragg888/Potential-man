@@ -1,5 +1,8 @@
--- SCP Hub v4 — self-contained floating UI (launcher can't fail)
--- · Forsaken Plus style M1 box · SCP Hub style Always box · All features
+-- SCP Hub v5 — Fluent-Renewed UI · smaller loading · all features restored
+-- · M1 box: Forsaken Plus style (transient black ForceField @ QueryHitbox)
+-- · Always box: SCP Hub long-detection style, editable size + count
+-- · Loading: [🔒] SCP HUB at top, image 9859971171 (fallback 9859971166) bg
+
 repeat task.wait() until game:IsLoaded()
 
 local Players           = game:GetService("Players")
@@ -29,9 +32,9 @@ local BG_IMAGE = "rbxassetid://9859971171"
 local BG_IMAGE_ALT = "rbxassetid://9859971166"
 
 -- =========================================================
--- LOADING SCREEN (small)
+-- SMALLER LOADING SCREEN
 -- =========================================================
-local Loading = { StartTime = tick(), MinDisplayTime = 2.8, Progress = 0, Done = false,
+local Loading = { StartTime = tick(), MinDisplayTime = 2.5, Progress = 0, Done = false,
     GUI=nil, Bar=nil, Pct=nil, Status=nil }
 
 local function safeTween(inst, ti, props)
@@ -42,12 +45,10 @@ end
 
 local function drawLock(parent, accent, dark)
     local body = Instance.new("Frame")
-    body.AnchorPoint = Vector2.new(0.5, 0)
-    body.Position = UDim2.fromScale(0.5, 0.45)
-    body.Size = UDim2.fromScale(0.72, 0.52)
-    body.BackgroundColor3 = accent; body.BorderSizePixel = 0; body.ZIndex = 5
-    body.Parent = parent
-    local bc = Instance.new("UICorner"); bc.CornerRadius = UDim.new(0, 5); bc.Parent = body
+    body.AnchorPoint = Vector2.new(0.5, 0); body.Position = UDim2.fromScale(0.5, 0.45)
+    body.Size = UDim2.fromScale(0.72, 0.52); body.BackgroundColor3 = accent
+    body.BorderSizePixel = 0; body.ZIndex = 5; body.Parent = parent
+    local bc = Instance.new("UICorner"); bc.CornerRadius = UDim.new(0, 4); bc.Parent = body
     local sh = Instance.new("Frame")
     sh.AnchorPoint = Vector2.new(0.5, 1); sh.Position = UDim2.fromScale(0.5, 0.48)
     sh.Size = UDim2.fromScale(0.48, 0.32); sh.BackgroundTransparency = 1
@@ -100,7 +101,7 @@ local function createLoadingScreen()
 
         local bgImg = Instance.new("ImageLabel")
         bgImg.Size = UDim2.fromScale(1,1); bgImg.BackgroundTransparency = 1
-        bgImg.Image = BG_IMAGE; bgImg.ImageTransparency = 0.82
+        bgImg.Image = BG_IMAGE; bgImg.ImageTransparency = 0.85
         bgImg.ScaleType = Enum.ScaleType.Crop; bgImg.ZIndex = 2; bgImg.Parent = gui
         task.spawn(function()
             local okp = pcall(function() ContentProvider:PreloadAsync({ bgImg }) end)
@@ -109,20 +110,21 @@ local function createLoadingScreen()
             if not okp or not hasSize then pcall(function() bgImg.Image = BG_IMAGE_ALT end) end
         end)
 
+        -- SMALLER top bar (0.28 wide, 0.06 tall)
         local topBar = Instance.new("Frame")
-        topBar.AnchorPoint = Vector2.new(0.5, 0); topBar.Position = UDim2.fromScale(0.5, 0.035)
-        topBar.Size = UDim2.fromScale(0.34, 0.075)
+        topBar.AnchorPoint = Vector2.new(0.5, 0); topBar.Position = UDim2.fromScale(0.5, 0.04)
+        topBar.Size = UDim2.fromScale(0.28, 0.06)
         topBar.BackgroundTransparency = 1; topBar.ZIndex = 5; topBar.Parent = gui
 
         local lockBox = Instance.new("Frame")
         lockBox.AnchorPoint = Vector2.new(1, 0.5); lockBox.Position = UDim2.fromScale(0.5, 0.5)
-        lockBox.Size = UDim2.fromScale(0.24, 0.92); lockBox.BackgroundTransparency = 1
+        lockBox.Size = UDim2.fromScale(0.22, 0.9); lockBox.BackgroundTransparency = 1
         lockBox.ZIndex = 5; lockBox.Parent = topBar
         local la = Instance.new("UIAspectRatioConstraint"); la.AspectRatio = 1; la.Parent = lockBox
         drawLock(lockBox, Color3.fromRGB(220,40,40), Color3.fromRGB(15,15,18))
 
         local title = Instance.new("TextLabel")
-        title.AnchorPoint = Vector2.new(0, 0.5); title.Position = UDim2.fromScale(0.53, 0.5)
+        title.AnchorPoint = Vector2.new(0, 0.5); title.Position = UDim2.fromScale(0.54, 0.5)
         title.Size = UDim2.fromScale(0.45, 0.9); title.BackgroundTransparency = 1
         title.Font = Enum.Font.GothamBold; title.Text = "SCP HUB"
         title.TextColor3 = Color3.fromRGB(220,40,40); title.TextScaled = true
@@ -130,28 +132,29 @@ local function createLoadingScreen()
         title.TextStrokeTransparency = 0.4; title.TextStrokeColor3 = Color3.new(0,0,0)
         title.ZIndex = 5; title.Parent = topBar
 
+        -- SMALLER bar (0.26 wide)
         local barBG = Instance.new("Frame")
-        barBG.AnchorPoint = Vector2.new(0.5, 0.5); barBG.Position = UDim2.fromScale(0.5, 0.90)
-        barBG.Size = UDim2.fromScale(0.30, 0.011)
+        barBG.AnchorPoint = Vector2.new(0.5, 0.5); barBG.Position = UDim2.fromScale(0.5, 0.91)
+        barBG.Size = UDim2.fromScale(0.26, 0.009)
         barBG.BackgroundColor3 = Color3.fromRGB(30,30,34)
         barBG.BorderSizePixel = 0; barBG.ZIndex = 5; barBG.Parent = gui
-        local bc = Instance.new("UICorner"); bc.CornerRadius = UDim.new(0,6); bc.Parent = barBG
+        local bc = Instance.new("UICorner"); bc.CornerRadius = UDim.new(0,4); bc.Parent = barBG
 
         local bar = Instance.new("Frame")
         bar.Size = UDim2.fromScale(0,1); bar.BackgroundColor3 = Color3.fromRGB(200,30,30)
         bar.BorderSizePixel = 0; bar.ZIndex = 6; bar.Parent = barBG
-        local fc = Instance.new("UICorner"); fc.CornerRadius = UDim.new(0,6); fc.Parent = bar
+        local fc = Instance.new("UICorner"); fc.CornerRadius = UDim.new(0,4); fc.Parent = bar
 
         local pct = Instance.new("TextLabel")
-        pct.AnchorPoint = Vector2.new(0.5, 0); pct.Position = UDim2.fromScale(0.5, 0.918)
-        pct.Size = UDim2.fromScale(0.3, 0.025); pct.BackgroundTransparency = 1
+        pct.AnchorPoint = Vector2.new(0.5, 0); pct.Position = UDim2.fromScale(0.5, 0.925)
+        pct.Size = UDim2.fromScale(0.26, 0.02); pct.BackgroundTransparency = 1
         pct.Font = Enum.Font.Gotham; pct.Text = "0%"
         pct.TextColor3 = Color3.fromRGB(200,200,200); pct.TextScaled = true
         pct.ZIndex = 5; pct.Parent = gui
 
         local status = Instance.new("TextLabel")
-        status.AnchorPoint = Vector2.new(0.5, 0); status.Position = UDim2.fromScale(0.5, 0.945)
-        status.Size = UDim2.fromScale(0.5, 0.022); status.BackgroundTransparency = 1
+        status.AnchorPoint = Vector2.new(0.5, 0); status.Position = UDim2.fromScale(0.5, 0.948)
+        status.Size = UDim2.fromScale(0.45, 0.018); status.BackgroundTransparency = 1
         status.Font = Enum.Font.Gotham; status.Text = "Booting..."
         status.TextColor3 = Color3.fromRGB(140,140,140); status.TextScaled = true
         status.ZIndex = 5; status.Parent = gui
@@ -189,431 +192,20 @@ local function finishLoading()
         task.wait(0.6); if gui and gui.Parent then gui:Destroy() end
     end)
 end
-setProgress(10, "Init...")
+setProgress(8, "Loading UI library...")
 
 -- =========================================================
--- MAIN UI (self-contained floating launcher + panel)
+-- FLUENT-RENEWED (best library: stable, feature-complete)
 -- =========================================================
-local UI = {
-    Launcher = nil, Panel = nil, Content = nil, Open = false,
-    BgImage = nil, _layoutOrder = 0,
-    BindToggle = "RightShift",
-    _dragStart = nil, _dragOrigin = nil, _launcherDrag = nil, _launcherOrigin = nil,
-    _launcherMoved = false,
-}
-
-local PANEL_W, PANEL_H = 340, 440
-
-local function buildUI()
-    local sg = makeGui("SCPHubUI")
-    sg.DisplayOrder = 1000
-    UI.Screen = sg
-
-    -- Launcher button (small circular, draggable)
-    local btn = Instance.new("TextButton")
-    btn.Name = "Launcher"
-    btn.AnchorPoint = Vector2.new(1, 0.5)
-    btn.Position = UDim2.new(1, -16, 0.5, 0)
-    btn.Size = UDim2.fromOffset(52, 52)
-    btn.BackgroundColor3 = Color3.fromRGB(20, 20, 22)
-    btn.BorderSizePixel = 0
-    btn.AutoButtonColor = false
-    btn.Text = ""
-    btn.Active = true
-    btn.ZIndex = 100
-    btn.Parent = sg
-    local bc = Instance.new("UICorner"); bc.CornerRadius = UDim.new(1, 0); bc.Parent = btn
-    local stroke = Instance.new("UIStroke"); stroke.Color = Color3.fromRGB(200, 40, 40)
-    stroke.Thickness = 2; stroke.Transparency = 0.2; stroke.Parent = btn
-
-    -- lock icon in button
-    local iconBox = Instance.new("Frame")
-    iconBox.AnchorPoint = Vector2.new(0.5, 0.5); iconBox.Position = UDim2.fromScale(0.5, 0.5)
-    iconBox.Size = UDim2.fromScale(0.62, 0.62); iconBox.BackgroundTransparency = 1
-    iconBox.ZIndex = 101; iconBox.Parent = btn
-    local ia = Instance.new("UIAspectRatioConstraint"); ia.AspectRatio = 1; ia.Parent = iconBox
-    drawLock(iconBox, Color3.fromRGB(220, 40, 40), Color3.fromRGB(15, 15, 18))
-
-    UI.Launcher = btn
-
-    -- Panel
-    local panel = Instance.new("Frame")
-    panel.Name = "Panel"
-    panel.AnchorPoint = Vector2.new(1, 0.5)
-    panel.Position = UDim2.new(1, -80, 0.5, 0)
-    panel.Size = UDim2.fromOffset(0, PANEL_H)
-    panel.BackgroundColor3 = Color3.fromRGB(14, 14, 16)
-    panel.BorderSizePixel = 0
-    panel.ClipsDescendants = true
-    panel.ZIndex = 90
-    panel.Visible = false
-    panel.Parent = sg
-    local pc = Instance.new("UICorner"); pc.CornerRadius = UDim.new(0, 10); pc.Parent = panel
-    local ps = Instance.new("UIStroke"); ps.Color = Color3.fromRGB(200, 40, 40)
-    ps.Thickness = 1.5; ps.Transparency = 0.3; ps.Parent = panel
-    UI.Panel = panel
-
-    -- Panel bg image (subtle)
-    local pbg = Instance.new("ImageLabel")
-    pbg.Size = UDim2.fromScale(1, 1)
-    pbg.BackgroundTransparency = 1
-    pbg.Image = BG_IMAGE
-    pbg.ImageTransparency = 0.88
-    pbg.ScaleType = Enum.ScaleType.Crop
-    pbg.ZIndex = 0
-    pbg.Active = false
-    pbg.Parent = panel
-    pbg.ClipsDescendants = true
-
-    -- Header
-    local header = Instance.new("Frame")
-    header.Size = UDim2.new(1, 0, 0, 40)
-    header.BackgroundColor3 = Color3.fromRGB(20, 20, 22)
-    header.BorderSizePixel = 0
-    header.ZIndex = 95
-    header.Parent = panel
-    local hc = Instance.new("UICorner"); hc.CornerRadius = UDim.new(0, 10); hc.Parent = header
-    local hfill = Instance.new("Frame")
-    hfill.Size = UDim2.new(1, 0, 0, 20); hfill.Position = UDim2.new(0, 0, 1, -20)
-    hfill.BackgroundColor3 = Color3.fromRGB(20, 20, 22); hfill.BorderSizePixel = 0
-    hfill.ZIndex = 95; hfill.Parent = header
-
-    local hTitle = Instance.new("TextLabel")
-    hTitle.Position = UDim2.new(0, 14, 0, 0)
-    hTitle.Size = UDim2.new(1, -60, 1, 0)
-    hTitle.BackgroundTransparency = 1
-    hTitle.Font = Enum.Font.GothamBold
-    hTitle.TextSize = 15
-    hTitle.TextColor3 = Color3.fromRGB(230, 230, 230)
-    hTitle.TextXAlignment = Enum.TextXAlignment.Left
-    hTitle.Text = "SCP HUB"
-    hTitle.ZIndex = 96
-    hTitle.Parent = header
-
-    local close = Instance.new("TextButton")
-    close.AnchorPoint = Vector2.new(1, 0.5)
-    close.Position = UDim2.new(1, -10, 0.5, 0)
-    close.Size = UDim2.fromOffset(28, 28)
-    close.BackgroundColor3 = Color3.fromRGB(40, 20, 20)
-    close.BorderSizePixel = 0
-    close.Font = Enum.Font.GothamBold
-    close.TextSize = 14
-    close.TextColor3 = Color3.fromRGB(230, 100, 100)
-    close.Text = "X"
-    close.ZIndex = 96
-    close.Parent = header
-    local cbc = Instance.new("UICorner"); cbc.CornerRadius = UDim.new(1, 0); cbc.Parent = close
-    close.MouseButton1Click:Connect(function() UI:SetOpen(false) end)
-
-    -- Content scroll
-    local scroll = Instance.new("ScrollingFrame")
-    scroll.Name = "Content"
-    scroll.Position = UDim2.new(0, 0, 0, 40)
-    scroll.Size = UDim2.new(1, 0, 1, -40)
-    scroll.BackgroundTransparency = 1
-    scroll.BorderSizePixel = 0
-    scroll.ScrollBarThickness = 5
-    scroll.ScrollBarImageColor3 = Color3.fromRGB(200, 40, 40)
-    scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-    scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-    scroll.ZIndex = 92
-    scroll.Parent = panel
-    UI.Content = scroll
-
-    local pad = Instance.new("UIPadding")
-    pad.PaddingTop = UDim.new(0, 8)
-    pad.PaddingBottom = UDim.new(0, 8)
-    pad.PaddingLeft = UDim.new(0, 10)
-    pad.PaddingRight = UDim.new(0, 10)
-    pad.Parent = scroll
-
-    local ll = Instance.new("UIListLayout")
-    ll.SortOrder = Enum.SortOrder.LayoutOrder
-    ll.Padding = UDim.new(0, 6)
-    ll.Parent = scroll
-
-    -- Launcher drag + click (drag distinguishes move vs tap)
-    local pressOrigin
-    btn.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-           or input.UserInputType == Enum.UserInputType.Touch then
-            pressOrigin = input.Position
-            UI._launcherOrigin = btn.Position
-            UI._launcherMoved = false
-            UI._launcherDrag = true
-        end
-    end)
-    UIS.InputChanged:Connect(function(input)
-        if UI._launcherDrag and UI._launcherOrigin and
-           (input.UserInputType == Enum.UserInputType.MouseMovement
-            or input.UserInputType == Enum.UserInputType.Touch) then
-            local delta = input.Position - pressOrigin
-            if delta.Magnitude > 6 then UI._launcherMoved = true end
-            if UI._launcherMoved then
-                local np = UDim2.new(
-                    UI._launcherOrigin.X.Scale, UI._launcherOrigin.X.Offset + delta.X,
-                    UI._launcherOrigin.Y.Scale, UI._launcherOrigin.Y.Offset + delta.Y)
-                btn.Position = np
-            end
-        end
-    end)
-    UIS.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-           or input.UserInputType == Enum.UserInputType.Touch then
-            if UI._launcherDrag and not UI._launcherMoved then
-                UI:SetOpen(not UI.Open)
-            end
-            UI._launcherDrag = false
-        end
-    end)
-
-    -- Panel drag
-    local pDrag = false
-    local pOrigin, pOffset
-    header.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-           or input.UserInputType == Enum.UserInputType.Touch then
-            pDrag = true
-            pOrigin = input.Position
-            pOffset = UDim2.new(
-                panel.Position.X.Scale, panel.Position.X.Offset,
-                panel.Position.Y.Scale, panel.Position.Y.Offset)
-        end
-    end)
-    UIS.InputChanged:Connect(function(input)
-        if pDrag and pOffset and
-           (input.UserInputType == Enum.UserInputType.MouseMovement
-            or input.UserInputType == Enum.UserInputType.Touch) then
-            local d = input.Position - pOrigin
-            panel.Position = UDim2.new(
-                pOffset.X.Scale, pOffset.X.Offset + d.X,
-                pOffset.Y.Scale, pOffset.Y.Offset + d.Y)
-        end
-    end)
-    UIS.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-           or input.UserInputType == Enum.UserInputType.Touch then
-            pDrag = false
-        end
-    end)
+local Fluent = loadstring(game:HttpGet("https://github.com/ActualMasterOogway/Fluent-Renewed/releases/latest/download/Fluent.luau"))()
+if not Fluent then
+    warn("[SCP Hub] Fluent-Renewed failed to load")
+    return
 end
+local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/ActualMasterOogway/Fluent-Renewed/main/Addons/SaveManager.luau"))()
+local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/ActualMasterOogway/Fluent-Renewed/main/Addons/InterfaceManager.luau"))()
 
-function UI:SetOpen(open)
-    self.Open = open
-    if open then
-        self.Panel.Visible = true
-        self.Panel.Size = UDim2.fromOffset(0, PANEL_H)
-        TweenService:Create(self.Panel, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-            { Size = UDim2.fromOffset(PANEL_W, PANEL_H) }):Play()
-    else
-        TweenService:Create(self.Panel, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-            { Size = UDim2.fromOffset(0, PANEL_H) }):Play()
-        task.delay(0.22, function()
-            if not self.Open then self.Panel.Visible = false end
-        end)
-    end
-end
-
-buildUI()
-
--- keybind toggle
-UIS.InputBegan:Connect(function(input, gpe)
-    if gpe then return end
-    if input.KeyCode == Enum.KeyCode.RightShift then
-        UI:SetOpen(not UI.Open)
-    end
-end)
-
--- row helpers
-local function nextOrder()
-    UI._layoutOrder = UI._layoutOrder + 1
-    return UI._layoutOrder
-end
-
-local function makeRow(title, desc, height)
-    height = height or 54
-    local row = Instance.new("Frame")
-    row.Name = title
-    row.Size = UDim2.new(1, 0, 0, height)
-    row.BackgroundColor3 = Color3.fromRGB(22, 22, 24)
-    row.BorderSizePixel = 0
-    row.LayoutOrder = nextOrder()
-    row.Parent = UI.Content
-    local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 6); c.Parent = row
-    local t = Instance.new("TextLabel")
-    t.BackgroundTransparency = 1
-    t.Position = UDim2.new(0, 12, 0, 6)
-    t.Size = UDim2.new(1, -110, 0, 18)
-    t.Font = Enum.Font.GothamBold
-    t.TextSize = 13
-    t.TextXAlignment = Enum.TextXAlignment.Left
-    t.TextColor3 = Color3.fromRGB(230, 230, 230)
-    t.Text = title
-    t.Parent = row
-    if desc then
-        local d = Instance.new("TextLabel")
-        d.BackgroundTransparency = 1
-        d.Position = UDim2.new(0, 12, 0, 24)
-        d.Size = UDim2.new(1, -110, 0, 24)
-        d.Font = Enum.Font.Gotham
-        d.TextSize = 11
-        d.TextXAlignment = Enum.TextXAlignment.Left
-        d.TextWrapped = true
-        d.TextColor3 = Color3.fromRGB(150, 150, 150)
-        d.Text = desc
-        d.Parent = row
-    end
-    return row
-end
-
-local function makeToggle(title, desc, default, callback)
-    local row = makeRow(title, desc); if not row then return end
-    local box = Instance.new("TextButton")
-    box.Size = UDim2.fromOffset(44, 24)
-    box.Position = UDim2.new(1, -54, 0.5, -12)
-    box.BackgroundColor3 = default and Color3.fromRGB(200, 40, 40) or Color3.fromRGB(40, 40, 44)
-    box.BorderSizePixel = 0
-    box.Text = ""
-    box.AutoButtonColor = false
-    box.Parent = row
-    local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(1, 0); c.Parent = box
-    local knob = Instance.new("Frame")
-    knob.Size = UDim2.fromOffset(18, 18)
-    knob.Position = default and UDim2.new(1, -20, 0.5, -9) or UDim2.new(0, 2, 0.5, -9)
-    knob.BackgroundColor3 = Color3.new(1,1,1); knob.BorderSizePixel = 0
-    knob.Parent = box
-    local kc = Instance.new("UICorner"); kc.CornerRadius = UDim.new(1, 0); kc.Parent = knob
-    local state = default
-    box.MouseButton1Click:Connect(function()
-        state = not state
-        box.BackgroundColor3 = state and Color3.fromRGB(200, 40, 40) or Color3.fromRGB(40, 40, 44)
-        TweenService:Create(knob, TweenInfo.new(0.12), {
-            Position = state and UDim2.new(1, -20, 0.5, -9) or UDim2.new(0, 2, 0.5, -9)
-        }):Play()
-        if callback then pcall(callback, state) end
-    end)
-end
-
-local function makeSlider(title, desc, min, max, default, callback)
-    local row = makeRow(title, desc); if not row then return end
-    local val = default
-    local lbl = Instance.new("TextLabel")
-    lbl.Position = UDim2.new(1, -150, 0, 6)
-    lbl.Size = UDim2.new(0, 140, 0, 14)
-    lbl.BackgroundTransparency = 1
-    lbl.Font = Enum.Font.Gotham
-    lbl.TextSize = 11
-    lbl.TextColor3 = Color3.fromRGB(200, 200, 200)
-    lbl.TextXAlignment = Enum.TextXAlignment.Right
-    lbl.Text = tostring(default)
-    lbl.Parent = row
-
-    local drag = Instance.new("TextButton")
-    drag.Size = UDim2.fromOffset(140, 8)
-    drag.Position = UDim2.new(1, -150, 0.5, 6)
-    drag.BackgroundColor3 = Color3.fromRGB(40, 40, 44)
-    drag.BorderSizePixel = 0
-    drag.Text = ""
-    drag.AutoButtonColor = false
-    drag.Parent = row
-    local dc = Instance.new("UICorner"); dc.CornerRadius = UDim.new(1, 0); dc.Parent = drag
-
-    local fill = Instance.new("Frame")
-    fill.Size = UDim2.new((default - min) / math.max(max - min, 0.001), 0, 1, 0)
-    fill.BackgroundColor3 = Color3.fromRGB(200, 40, 40)
-    fill.BorderSizePixel = 0
-    fill.Parent = drag
-    local fc = Instance.new("UICorner"); fc.CornerRadius = UDim.new(1, 0); fc.Parent = fill
-
-    local dragging = false
-    drag.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-           or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-        end
-    end)
-    UIS.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
-           or input.UserInputType == Enum.UserInputType.Touch) then
-            local pct = math.clamp((input.Position.X - drag.AbsolutePosition.X) / math.max(drag.AbsoluteSize.X, 1), 0, 1)
-            val = min + (max - min) * pct
-            val = math.floor(val * 100 + 0.5) / 100
-            fill.Size = UDim2.new(pct, 0, 1, 0)
-            lbl.Text = tostring(val)
-            if callback then pcall(callback, val) end
-        end
-    end)
-    UIS.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-           or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = false
-        end
-    end)
-end
-
-local function makeDropdown(title, desc, options, default, callback)
-    local row = makeRow(title, desc); if not row then return end
-    local idx = 1
-    for i, v in ipairs(options) do if v == default then idx = i end end
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.fromOffset(110, 26)
-    btn.Position = UDim2.new(1, -120, 0.5, -13)
-    btn.BackgroundColor3 = Color3.fromRGB(40, 40, 44)
-    btn.BorderSizePixel = 0
-    btn.Font = Enum.Font.Gotham
-    btn.TextSize = 12
-    btn.TextColor3 = Color3.fromRGB(230, 230, 230)
-    btn.Text = options[idx]
-    btn.Parent = row
-    local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 6); c.Parent = btn
-    btn.MouseButton1Click:Connect(function()
-        idx = idx % #options + 1
-        btn.Text = options[idx]
-        if callback then pcall(callback, options[idx]) end
-    end)
-end
-
-local function makeButton(title, desc, callback)
-    local row = makeRow(title, desc); if not row then return end
-    local b = Instance.new("TextButton")
-    b.Size = UDim2.fromOffset(76, 26)
-    b.Position = UDim2.new(1, -86, 0.5, -13)
-    b.BackgroundColor3 = Color3.fromRGB(200, 40, 40)
-    b.BorderSizePixel = 0
-    b.Font = Enum.Font.GothamBold
-    b.TextSize = 12
-    b.TextColor3 = Color3.new(1,1,1)
-    b.Text = "Run"
-    b.Parent = row
-    local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 6); c.Parent = b
-    b.MouseButton1Click:Connect(function() if callback then pcall(callback) end end)
-end
-
-local function makeHeader(title)
-    local h = Instance.new("TextLabel")
-    h.Size = UDim2.new(1, 0, 0, 26)
-    h.BackgroundTransparency = 1
-    h.Font = Enum.Font.GothamBold
-    h.TextSize = 14
-    h.TextXAlignment = Enum.TextXAlignment.Left
-    h.TextColor3 = Color3.fromRGB(220, 40, 40)
-    h.Text = title
-    h.LayoutOrder = nextOrder()
-    h.Parent = UI.Content
-end
-
-local function makeLabel(text)
-    local l = Instance.new("TextLabel")
-    l.Size = UDim2.new(1, 0, 0, 22)
-    l.BackgroundTransparency = 1
-    l.Font = Enum.Font.Gotham
-    l.TextSize = 12
-    l.TextXAlignment = Enum.TextXAlignment.Left
-    l.TextColor3 = Color3.fromRGB(180, 180, 180)
-    l.Text = text
-    l.LayoutOrder = nextOrder()
-    l.Parent = UI.Content
-end
+setProgress(18, "Loading game data...")
 
 -- =========================================================
 -- Game bootstrap
@@ -745,14 +337,15 @@ local function fireBlock()
 end
 
 -- =========================================================
--- BOX system
+-- BOX SYSTEM (with size + count)
 -- =========================================================
 local BoxCfg = {
     Enabled = false, AppearMode = "M1",
     BoxColor = Color3.fromRGB(255, 60, 60),
     BoxWidth = 12, BoxHeight = 8, BoxLength = 30,
     BoxTransparency = 0.9, OutlineTransparency = 1,
-    boxes = {},
+    MaxBoxes = 1,  -- how many boxes appear per M1
+    Boxes = {},
 }
 
 local function ensureHitboxesFolder()
@@ -763,27 +356,33 @@ local function ensureHitboxesFolder()
     return h
 end
 
-local function spawnM1Box(killer)
+-- Forsaken Plus style M1 box (spawns N boxes)
+local function spawnM1Boxes(killer)
     if not killer or not killer.Parent then return end
     local qh = killer:FindFirstChild("QueryHitbox"); if not qh then return end
     local parent = ensureHitboxesFolder()
-    local p = Instance.new("Part")
-    p.Name = "SCPHubM1Box"; p.Anchored = true; p.CanCollide = false
-    p.CanTouch = false; p.CanQuery = false; p.CastShadow = false; p.Massless = true
-    p.Material = Enum.Material.ForceField
-    p.Color = Color3.fromRGB(0, 0, 0); p.Transparency = 0.1
-    p.Size = Vector3.new(5.2, 6, 5.65) * 2.2
-    p.CFrame = qh.CFrame * CFrame.new(0, 0, -3.5)
-    p.Parent = parent
-    Debris:AddItem(p, 0.4)
+    local count = math.max(1, math.floor(BoxCfg.MaxBoxes))
+    for i = 1, count do
+        local p = Instance.new("Part")
+        p.Name = "SCPHubM1Box"
+        p.Anchored = true; p.CanCollide = false
+        p.CanTouch = false; p.CanQuery = false; p.CastShadow = false; p.Massless = true
+        p.Material = Enum.Material.ForceField
+        p.Color = Color3.fromRGB(0, 0, 0); p.Transparency = 0.1
+        p.Size = Vector3.new(5.2, 6, 5.65) * 2.2
+        p.CFrame = qh.CFrame * CFrame.new(0, 0, -3.5)
+        p.Parent = parent
+        Debris:AddItem(p, 0.4)
+    end
 end
 
+-- SCP Hub style long detection box
 local function destroyLongBox(killer)
-    local d = BoxCfg.boxes[killer]; if not d then return end
+    local d = BoxCfg.Boxes[killer]; if not d then return end
     if d.part and d.part.Parent then pcall(function() d.part:Destroy() end) end
     if d.hl and d.hl.Parent then pcall(function() d.hl:Destroy() end) end
     if d.conn then pcall(function() d.conn:Disconnect() end) end
-    BoxCfg.boxes[killer] = nil
+    BoxCfg.Boxes[killer] = nil
 end
 local function applyLongBoxAppearance(data)
     local part, hl = data.part, data.hl
@@ -814,7 +413,7 @@ local function createLongBox(killer)
     hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
     hl.Adornee = part; hl.Parent = part
     local data = { part = part, hl = hl, conn = nil }
-    BoxCfg.boxes[killer] = data
+    BoxCfg.Boxes[killer] = data
     applyLongBoxAppearance(data)
     data.conn = RunService.Heartbeat:Connect(function()
         if not killer.Parent or not part.Parent then destroyLongBox(killer); return end
@@ -834,9 +433,9 @@ local function ensureBoxes()
     if not KillersFolder then return end
     for _, k in ipairs(KillersFolder:GetChildren()) do
         if k:IsA("Model") then
-            if BoxCfg.Enabled and BoxCfg.AppearMode == "Always" and not BoxCfg.boxes[k] then
+            if BoxCfg.Enabled and BoxCfg.AppearMode == "Always" and not BoxCfg.Boxes[k] then
                 createLongBox(k)
-            elseif (not BoxCfg.Enabled or BoxCfg.AppearMode ~= "Always") and BoxCfg.boxes[k] then
+            elseif (not BoxCfg.Enabled or BoxCfg.AppearMode ~= "Always") and BoxCfg.Boxes[k] then
                 destroyLongBox(k)
             end
         end
@@ -858,9 +457,9 @@ local function hookKillerForM1(killer)
             local id = tostring(anim.AnimationId):match("(%d+)")
             if not id or not ATTACK_ANIM_MAP[id] then return end
             if BoxCfg.AppearMode == "M1" then
-                spawnM1Box(killer)
+                spawnM1Boxes(killer)
             else
-                local data = BoxCfg.boxes[killer]
+                local data = BoxCfg.Boxes[killer]
                 if data then applyLongBoxAppearance(data) end
             end
         end)
@@ -1091,7 +690,7 @@ task.spawn(function()
     end
 end)
 
-setProgress(35, "ESP...")
+setProgress(35, "Loading ESP...")
 
 -- =========================================================
 -- ESP
@@ -1374,82 +973,865 @@ HDT_Trigger = function(force)
 end
 
 -- =========================================================
--- BUILD MENU (into floating panel)
+-- AIM (Survivor Stun)
 -- =========================================================
-makeHeader("ESP")
-makeToggle("Killer ESP", nil, true, function(v) ESP_CFG.Killers.Enabled = v end)
-makeToggle("Survivor ESP", nil, true, function(v) ESP_CFG.Survivors.Enabled = v end)
-makeToggle("Name tags", nil, true, function(v)
-    ESP_CFG.Killers.Name = v; ESP_CFG.Survivors.Name = v
+local AIM = { Enabled=false, AimMode="Camera", Smooth=1.0, PredictMode="Both",
+    PredictLead=0.15, PingMult=1.0, CurrentAbility=nil, CachedTargetHRP=nil, _aimUntil=0 }
+local PING_ABILITIES = { AimGun=true, GunFire=true, GunExplode=true, GunFail=true }
+local function getPing()
+    local ok, v = pcall(function() return lp:GetNetworkPing() end)
+    if ok and type(v) == "number" then return v end
+    ok, v = pcall(function() return Stats.Network.ServerStatsItem["Data Ping"]:GetValue() / 1000 end)
+    return ok and type(v) == "number" and v or 0
+end
+local function isPlayingSurvivor()
+    if getMyRole() ~= "Survivors" then return false end
+    local hum = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
+    return hum and hum.Health > 0
+end
+local function updateCachedTarget()
+    local mr = getMyRoot()
+    local kf = KillersFolder or (Workspace:FindFirstChild("Players") and Workspace.Players:FindFirstChild("Killers"))
+    if not mr or not kf then AIM.CachedTargetHRP = nil return end
+    local best, bestD = nil, 500
+    for _, s in ipairs(kf:GetChildren()) do
+        if s:IsA("Model") and s ~= lp.Character then
+            local hrp = s:FindFirstChild("HumanoidRootPart")
+            local hum = s:FindFirstChildOfClass("Humanoid")
+            if hrp and hum and hum.Health > 0 then
+                local d = (hrp.Position - mr.Position).Magnitude
+                if d < bestD then bestD = d; best = hrp end
+            end
+        end
+    end
+    AIM.CachedTargetHRP = best
+end
+task.spawn(function() while true do task.wait(0.05); pcall(updateCachedTarget) end end)
+local function isPingAbility(n) return n and PING_ABILITIES[n] == true end
+local function predictHRP(hrp)
+    if not hrp then return nil end
+    if AIM.PredictMode == "Off" then return hrp.Position end
+    local vel = hrp.AssemblyLinearVelocity or Vector3.new()
+    if vel.Magnitude > 200 then vel = Vector3.zero end
+    local velLead, pingLead = 0, 0
+    if AIM.PredictMode == "Velocity" or AIM.PredictMode == "Both" then velLead = AIM.PredictLead end
+    if isPingAbility(AIM.CurrentAbility) and (AIM.PredictMode == "Ping" or AIM.PredictMode == "Both") then
+        pingLead = math.clamp(getPing() * 0.5 * AIM.PingMult, 0, 0.5)
+    end
+    return hrp.Position + vel * math.clamp(velLead + pingLead, 0, 0.75)
+end
+local function AimFor(duration, abilityName)
+    AIM._aimUntil = tick() + (duration or 1.0)
+    AIM.CurrentAbility = abilityName
+end
+local autoRotSaved = nil
+local function restoreAutoRotate()
+    if autoRotSaved == nil then return end
+    local hum = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
+    if hum then hum.AutoRotate = autoRotSaved end
+    autoRotSaved = nil
+end
+local function disableAutoRotate()
+    local hum = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+    if autoRotSaved == nil then autoRotSaved = hum.AutoRotate end
+    hum.AutoRotate = false
+end
+lp.CharacterAdded:Connect(function() autoRotSaved = nil end)
+local Camera = Workspace.CurrentCamera
+Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+    if Workspace.CurrentCamera then Camera = Workspace.CurrentCamera end
 end)
-makeToggle("Distance", nil, true, function(v)
-    ESP_CFG.Killers.Distance = v; ESP_CFG.Survivors.Distance = v
-end)
-
-makeHeader("Auto Block")
-makeToggle("Enable Auto Block", "Sound + animation detection", false, function(v) AB_Cfg.Enabled = v end)
-makeToggle("Sound Trigger", nil, true, function(v) AB_Cfg.SoundTrigger = v end)
-makeToggle("Animation Trigger", "Forsaken Plus sweep", true, function(v) AB_Cfg.AnimTrigger = v end)
-makeToggle("Wall Check", nil, true, function(v) AB_Cfg.WallCheck = v end)
-makeButton("Block Now", nil, function() task.spawn(fireBlock) end)
-
-makeHeader("Box")
-makeToggle("Show Box", nil, false, function(v)
-    BoxCfg.Enabled = v
-    if not v then for k in pairs(BoxCfg.boxes) do destroyLongBox(k) end
-    else task.spawn(ensureBoxes) end
-end)
-makeDropdown("Appear Mode", "M1 = FP-style transient / Always = SCP-Hub long",
-    {"M1", "Always"}, "M1", function(v)
-        BoxCfg.AppearMode = v
-        if v == "Always" then task.spawn(ensureBoxes)
-        else for k in pairs(BoxCfg.boxes) do destroyLongBox(k) end end
-    end)
-makeSlider("Box Width", nil, 1, 60, 12, function(v) BoxCfg.BoxWidth = v end)
-makeSlider("Box Length", nil, 1, 120, 30, function(v) BoxCfg.BoxLength = v end)
-makeSlider("Box Height", nil, 1, 30, 8, function(v) BoxCfg.BoxHeight = v end)
-makeSlider("Box Transparency", nil, 0, 1, 0.9, function(v) BoxCfg.BoxTransparency = v end)
-
-makeHeader("Auto Generator")
-makeToggle("Enable Auto Gen", nil, false, function(v) AUTOGEN.Enabled = v; autogenLoop() end)
-makeSlider("Range", nil, 5, 30, 10, function(v) AUTOGEN.MaxDistance = v end)
-makeSlider("Interval", nil, 0.5, 5, 1.05, function(v) AUTOGEN.Interval = v end)
-
-makeHeader("Stamina")
-makeDropdown("Preset", nil, {"Regular", "Semi", "Infinite"}, "Regular", function(v) stamSetMode(v) end)
-
-makeHeader("HDT")
-makeToggle("Enable HDT", nil, false, function(v) HDT.Enabled = v end)
-makeToggle("Auto on Block", nil, true, function(v) HDT.AutoTrigger = v end)
-makeSlider("Speed", nil, 2, 40, 12, function(v) HDT.Speed = v end)
-makeSlider("Stop Distance", nil, 0.5, 10, 2, function(v) HDT.StopDistance = v end)
-makeButton("Trigger Now", "Also Q keybind", function()
-    task.spawn(function() pcall(function() HDT_Trigger(true) end) end)
-end)
-
-makeHeader("Misc")
-makeButton("Fullbright", nil, function()
+local function ballisticAim(targetPos, projSpeed, gravity)
+    local mr = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
+    if not mr or not targetPos then return targetPos end
+    local origin = mr.Position
+    local delta = targetPos - origin
+    local horiz = Vector3.new(delta.X, 0, delta.Z).Magnitude
+    if horiz < 0.1 then return targetPos end
+    local vert = delta.Y
+    local v2 = projSpeed * projSpeed
+    local g = gravity or workspace.Gravity
+    local disc = v2 * v2 - g * (g * horiz * horiz + 2 * vert * v2)
+    if disc < 0 then return targetPos + Vector3.new(0, math.clamp(horiz * 0.15, 0, 20), 0) end
+    local angle = math.atan2(v2 - math.sqrt(disc), g * horiz)
+    return origin + Vector3.new(delta.X, 0, delta.Z).Unit * horiz + Vector3.new(0, horiz * math.tan(angle), 0)
+end
+local STUN_ABILITY_KEYS = { Punch=true, Slash=true, OneShot=true, AimGun=true, GunFire=true, CrystalPitch=true, Hatchet=true }
+local ABILITY_LOCKS = { Punch=2.00, Slash=0.80, OneShot=1.20, AimGun=0.60, GunFire=1.20, CrystalPitch=1.40, Hatchet=0.95 }
+local DEFAULT_LOCK = 0.85
+local ABILITY_AIM_PART = { Punch="Head", Slash="Head", OneShot="Head", AimGun="Head", GunFire="Head", CrystalPitch="Head", Hatchet="Head" }
+local BALLISTIC = { CrystalPitch = true }
+local TRIGGER_WINDOW = 0.18
+local STUN_ANIMS = {}
+local STUN_BY_ABILITY = {}
+local GUEST_PUNCH_ANIMS = { ["126830014841198"]="Punch", ["126355327951215"]="Punch", ["121086746534252"]="Punch" }
+local AbilityHook = { Enabled=true, Cooldown=1.0, LockMultiplier=1.0, _lastFire=0, _animConn=nil, _registered=0, _lastName="", _lastSkin="" }
+local function registerGuestPunchAnims()
+    local lock = ABILITY_LOCKS.Punch or DEFAULT_LOCK
+    local aimPart = ABILITY_AIM_PART.Punch or "Head"
+    for id in pairs(GUEST_PUNCH_ANIMS) do
+        STUN_ANIMS[id] = { Ability="Punch", Lock=lock, AimPart=aimPart, Ballistic=false }
+        AbilityHook._registered += 1
+    end
+    STUN_BY_ABILITY.Punch = { AimPart=aimPart, Ballistic=false, Lock=lock }
+end
+local function extractAnimIds(v, out)
+    out = out or {}
+    if type(v) == "string" then local id = v:match("(%d+)"); if id then out[#out+1] = id end
+    elseif type(v) == "number" then out[#out+1] = tostring(v)
+    elseif type(v) == "table" then for _, x in pairs(v) do extractAnimIds(x, out) end end
+    return out
+end
+local function getAnimsTable(cfg)
+    if type(cfg) ~= "table" then return nil end
+    if type(cfg.Animations) == "table" then return cfg.Animations end
+    if type(cfg.Config) == "table" and type(cfg.Config.Animations) == "table" then return cfg.Config.Animations end
+end
+local function isStunAbility(n) return STUN_ABILITY_KEYS[n] == true end
+local function registerAnimsFrom(anims)
+    if not anims then return 0 end
+    local count = 0
+    for abilityName, animValue in pairs(anims) do
+        if isStunAbility(abilityName) then
+            local lock = ABILITY_LOCKS[abilityName] or DEFAULT_LOCK
+            local aimPart = ABILITY_AIM_PART[abilityName] or "HumanoidRootPart"
+            local ballistic = BALLISTIC[abilityName] or false
+            for _, id in ipairs(extractAnimIds(animValue)) do
+                STUN_ANIMS[id] = { Ability=abilityName, Lock=lock, AimPart=aimPart, Ballistic=ballistic }
+                count += 1
+            end
+            STUN_BY_ABILITY[abilityName] = { AimPart=aimPart, Ballistic=ballistic, Lock=lock }
+        end
+    end
+    return count
+end
+local function loadCharacterAnims()
+    STUN_ANIMS = {}; STUN_BY_ABILITY = {}; AbilityHook._registered = 0
+    local char = lp.Character; if not char then return end
+    local name = char:GetAttribute("CharacterName") or char.Name
+    local skin = char:GetAttribute("SkinName") or ""
+    if not name or name == "" then return end
+    local assets = ReplicatedStorage:FindFirstChild("Assets"); if not assets then return end
     pcall(function()
-        Lighting.Ambient = Color3.new(1,1,1)
-        Lighting.OutdoorAmbient = Color3.new(1,1,1)
-        Lighting.Brightness = 2
-        Lighting.ClockTime = 12
+        local cfg = require(assets.Survivors[name].Config)
+        AbilityHook._registered += registerAnimsFrom(getAnimsTable(cfg))
     end)
-end)
-makeButton("Show Chat", nil, function()
-    pcall(function()
-        local c = TextChatService:FindFirstChildOfClass("ChatWindowConfiguration")
-        local i = TextChatService:FindFirstChildOfClass("ChatInputBarConfiguration")
-        if c then c.Enabled = true end
-        if i then i.Enabled = true end
+    if skin ~= "" then
+        pcall(function()
+            local cfg = require(assets.Skins.Survivors[name][skin].Config)
+            AbilityHook._registered += registerAnimsFrom(getAnimsTable(cfg))
+        end)
+    end
+    registerGuestPunchAnims()
+end
+local function bindAnimWatch()
+    if AbilityHook._animConn then
+        pcall(function() AbilityHook._animConn:Disconnect() end)
+        AbilityHook._animConn = nil
+    end
+    local char = lp.Character; if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    local animator = hum and hum:FindFirstChildOfClass("Animator")
+    if not animator then task.delay(0.4, bindAnimWatch) return end
+    AbilityHook._animConn = animator.AnimationPlayed:Connect(function(track)
+        if not AbilityHook.Enabled then return end
+        local anim = track and track.Animation; if not anim then return end
+        local id = tostring(anim.AnimationId):match("(%d+)")
+        local info = id and STUN_ANIMS[id]
+        if not info then return end
+        if track.TimePosition > TRIGGER_WINDOW then return end
+        local now = tick()
+        if now - (AbilityHook._lastFire or 0) < (AbilityHook.Cooldown or 1.0) then return end
+        AbilityHook._lastFire = now
+        AimFor(info.Lock * (AbilityHook.LockMultiplier or 1.0), info.Ability)
     end)
+end
+lp.CharacterAdded:Connect(function() task.wait(0.4); loadCharacterAnims(); bindAnimWatch() end)
+task.spawn(function() if lp.Character then task.wait(0.4); loadCharacterAnims(); bindAnimWatch() end end)
+task.spawn(function()
+    while true do
+        task.wait(5)
+        if lp.Character then
+            local name = lp.Character:GetAttribute("CharacterName") or lp.Character.Name
+            local skin = lp.Character:GetAttribute("SkinName") or ""
+            if AbilityHook._registered == 0 or name ~= AbilityHook._lastName or skin ~= AbilityHook._lastSkin then
+                AbilityHook._lastName = name; AbilityHook._lastSkin = skin
+                loadCharacterAnims(); bindAnimWatch()
+            end
+        end
+    end
 end)
-makeButton("Reset Character", nil, function()
-    local h = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
-    if h then h.Health = 0 end
+RunService:BindToRenderStep("SCPHubAim", Enum.RenderPriority.Camera.Value + 1, function(dt)
+    local aimActive = AIM.Enabled or (tick() < (AIM._aimUntil or 0))
+    if not isPlayingSurvivor() or not aimActive or not AIM.CachedTargetHRP or not AIM.CachedTargetHRP.Parent then
+        restoreAutoRotate()
+        if tick() >= (AIM._aimUntil or 0) then AIM.CurrentAbility = nil end
+        return
+    end
+    local mr = getMyRoot()
+    if not mr then
+        restoreAutoRotate()
+        if tick() >= (AIM._aimUntil or 0) then AIM.CurrentAbility = nil end
+        return
+    end
+    local targetPos = predictHRP(AIM.CachedTargetHRP)
+    if not targetPos then return end
+    if AIM.CurrentAbility and AIM.CachedTargetHRP.Parent then
+        local killer = AIM.CachedTargetHRP.Parent
+        local ov = STUN_BY_ABILITY[AIM.CurrentAbility]
+        if ov then
+            if ov.AimPart and ov.AimPart ~= "HumanoidRootPart" then
+                local p = killer:FindFirstChild(ov.AimPart)
+                if p and p:IsA("BasePart") then targetPos = p.Position end
+            end
+            if ov.Ballistic then targetPos = ballisticAim(targetPos, 80, workspace.Gravity) end
+        end
+    end
+    local smooth = AIM.Smooth or 1.0
+    local alpha = (smooth >= 0.999) and 1 or (1 - math.exp(-dt * math.clamp(smooth * 30, 2, 60)))
+    local mode = AIM.AimMode
+    if mode == "Camera" or mode == "HRP+Camera" then
+        Camera.CFrame = Camera.CFrame:Lerp(CFrame.lookAt(Camera.CFrame.Position, targetPos), alpha)
+    end
+    if mode == "HRP" or mode == "HRP+Camera" then
+        disableAutoRotate()
+        local flat = Vector3.new(targetPos.X, mr.Position.Y, targetPos.Z)
+        local delta = flat - mr.Position
+        if delta.Magnitude > 0.05 then
+            mr.CFrame = mr.CFrame:Lerp(CFrame.lookAt(mr.Position, flat), alpha)
+        end
+    else
+        restoreAutoRotate()
+    end
+    if tick() >= (AIM._aimUntil or 0) then AIM.CurrentAbility = nil end
 end)
 
-makeLabel("Q = HDT · RightShift = toggle panel")
+-- =========================================================
+-- CHANCE AIMLOCK
+-- =========================================================
+local ChanceAimbot = {
+    Enabled=false, LockTime=0.9, PredMin=2, PredMax=3,
+    TurnLeadMult=1.0, FireRemote=true,
+    _isLocking=false, _lockUntil=0, _currentTarget=nil,
+    _lastTrigger=0, _hooked={}, _velHistory={},
+}
+local CHANCE_KILLER_NAMES = {
+    ["jason"]=true, ["c00lkidd"]=true, ["johndoe"]=true, ["1x1x1x1"]=true,
+    ["noli"]=true, ["slasher"]=true, ["nosferatu"]=true, ["azure"]=true,
+    ["coolkid"]=true, ["coolkidd"]=true, ["sixer"]=true, ["666"]=true,
+    ["guest666"]=true, ["doombringer"]=true, ["zombie king"]=true, ["azurewrath"]=true,
+}
+local CHANCE_ABILITY_KEYWORDS = {
+    "oneshot","one_shot","one.shot","one-shot","one shot","oneshots",
+    "1shot","1_shot","1-shot","flintlock","flint_lock","flint.lock",
+    "flint-lock","flint lock","flint","chancegun","chance_gun","chance-gun","chance gun",
+    "chanceshot","chance_shot","chance-shot","chance shot",
+    "chanceflintlock","chance_flintlock","chance-flintlock",
+    "chanceoneshot","chance_oneshot","chance-oneshot",
+    "pistol","revolver",
+}
+local function chanceIsKillerName(name)
+    name = string.lower(tostring(name or ""))
+    if CHANCE_KILLER_NAMES[name] then return true end
+    for k in pairs(CHANCE_KILLER_NAMES) do if name:find(k, 1, true) then return true end end
+    return false
+end
+local function chanceGetNearestKiller()
+    local my = getMyRoot(); if not my then return nil end
+    local bestRoot, bestD = nil, math.huge
+    local function check(model)
+        if not model or not chanceIsKillerName(model.Name) then return end
+        local r = model:FindFirstChild("HumanoidRootPart")
+        local h = model:FindFirstChildOfClass("Humanoid")
+        if not r or not h or h.Health <= 0 then return end
+        local d = (my.Position - r.Position).Magnitude
+        if d < bestD then bestD = d; bestRoot = r end
+    end
+    local folder = workspace:FindFirstChild("Players")
+    local killers = folder and folder:FindFirstChild("Killers")
+    if killers then for _, k in ipairs(killers:GetChildren()) do check(k) end end
+    if not bestRoot then
+        for _, m in ipairs(workspace:GetChildren()) do if m:IsA("Model") then check(m) end end
+    end
+    return bestRoot
+end
+local function chanceMatchesAbility(btn)
+    local blobs = {}
+    pcall(function()
+        table.insert(blobs, string.lower(tostring(btn.Name or "")))
+        if btn:IsA("TextButton") or btn:IsA("TextLabel") then table.insert(blobs, string.lower(tostring(btn.Text or ""))) end
+        for _, d in ipairs(btn:GetDescendants()) do
+            if d:IsA("TextLabel") or d:IsA("TextButton") then
+                table.insert(blobs, string.lower(tostring(d.Text or "")))
+                table.insert(blobs, string.lower(tostring(d.Name or "")))
+            end
+        end
+        if btn.Parent then table.insert(blobs, string.lower(tostring(btn.Parent.Name or ""))) end
+    end)
+    for _, blob in ipairs(blobs) do
+        blob = blob:gsub("%s+", " ")
+        for _, kw in ipairs(CHANCE_ABILITY_KEYWORDS) do
+            if blob:find(kw, 1, true) then return true end
+        end
+    end
+    return false
+end
+local function chanceSmoothedVelocity(root)
+    if not root then return Vector3.zero end
+    local v = root.AssemblyLinearVelocity
+    local hist = ChanceAimbot._velHistory
+    hist[#hist + 1] = v
+    if #hist > 10 then table.remove(hist, 1) end
+    local sum = Vector3.zero
+    for i = 1, #hist do sum = sum + hist[i] end
+    return sum / math.max(#hist, 1)
+end
+local function chancePredictPosition(root)
+    if not root then return nil end
+    local pos = root.Position
+    local vel = chanceSmoothedVelocity(root)
+    local horiz = Vector3.new(vel.X, 0, vel.Z)
+    local speed = horiz.Magnitude
+    if speed < 1.2 then return pos end
+    local lead = ChanceAimbot.PredMin
+        + (ChanceAimbot.PredMax - ChanceAimbot.PredMin) * math.clamp(speed / 28, 0, 1)
+    local hist = ChanceAimbot._velHistory
+    if #hist >= 3 then
+        local a = hist[#hist - 2]
+        local b = hist[#hist]
+        local ah = Vector3.new(a.X, 0, a.Z)
+        local bh = Vector3.new(b.X, 0, b.Z)
+        if ah.Magnitude > 2 and bh.Magnitude > 2 and ah.Unit:Dot(bh.Unit) < 0.45 then
+            lead = lead + 0.9 * (ChanceAimbot.TurnLeadMult or 1.0)
+        end
+    end
+    return pos + horiz.Unit * lead
+end
+local function chanceDoAimlock(root)
+    local me = getMyRoot()
+    if not me or not root or not root.Parent then return end
+    local aimAt = chancePredictPosition(root); if not aimAt then return end
+    local myPos = me.Position
+    me.AssemblyAngularVelocity = Vector3.zero
+    local cf = CFrame.new(myPos, Vector3.new(aimAt.X, myPos.Y, aimAt.Z))
+    me.CFrame = cf; me.CFrame = cf; me.CFrame = cf
+end
+local function chanceStartAimlock()
+    if os.clock() - ChanceAimbot._lastTrigger < 0.12 then return end
+    local root = chanceGetNearestKiller(); if not root then return end
+    ChanceAimbot._lastTrigger = os.clock()
+    ChanceAimbot._isLocking = true
+    ChanceAimbot._lockUntil = os.clock() + ChanceAimbot.LockTime
+    ChanceAimbot._currentTarget = root
+    ChanceAimbot._velHistory = {}
+    for _ = 1, 6 do chanceDoAimlock(root) end
+end
+local function chanceHookButton(btn)
+    if not btn or ChanceAimbot._hooked[btn] then return end
+    if not (btn:IsA("GuiButton") or btn:IsA("TextButton") or btn:IsA("ImageButton")) then return end
+    if not chanceMatchesAbility(btn) then return end
+    ChanceAimbot._hooked[btn] = true
+    local function fire() if not ChanceAimbot.Enabled then return end; chanceStartAimlock() end
+    pcall(function() btn.Activated:Connect(fire) end)
+    pcall(function() btn.MouseButton1Click:Connect(fire) end)
+    pcall(function() btn.MouseButton1Down:Connect(fire) end)
+    pcall(function() btn.TouchTap:Connect(fire) end)
+    pcall(function()
+        btn.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1
+                or input.UserInputType == Enum.UserInputType.Touch then fire() end
+        end)
+    end)
+end
+local function chanceScanButtons()
+    pcall(function()
+        if not PlayerGui then return end
+        for _, b in ipairs(PlayerGui:GetDescendants()) do chanceHookButton(b) end
+    end)
+end
+task.spawn(function()
+    while true do
+        if ChanceAimbot.Enabled then pcall(chanceScanButtons); task.wait(0.4)
+        else task.wait(0.5) end
+    end
+end)
+lp.CharacterAdded:Connect(function()
+    ChanceAimbot._isLocking = false; ChanceAimbot._lockUntil = 0
+    ChanceAimbot._currentTarget = nil; ChanceAimbot._hooked = {}
+    ChanceAimbot._velHistory = {}
+    task.wait(1.2)
+    if ChanceAimbot.Enabled then pcall(chanceScanButtons) end
+end)
+RunService.RenderStepped:Connect(function()
+    if not ChanceAimbot.Enabled or not ChanceAimbot._isLocking then return end
+    local now = os.clock()
+    if now > ChanceAimbot._lockUntil then
+        ChanceAimbot._isLocking = false; ChanceAimbot._currentTarget = nil
+        ChanceAimbot._velHistory = {}; return
+    end
+    local root = chanceGetNearestKiller()
+    if root then ChanceAimbot._currentTarget = root end
+    if ChanceAimbot._currentTarget and ChanceAimbot._currentTarget.Parent then
+        chanceDoAimlock(ChanceAimbot._currentTarget)
+        chanceDoAimlock(ChanceAimbot._currentTarget)
+        chanceDoAimlock(ChanceAimbot._currentTarget)
+        chanceDoAimlock(ChanceAimbot._currentTarget)
+    end
+end)
+
+setProgress(55, "Building UI...")
+
+-- =========================================================
+-- VEERONICA
+-- =========================================================
+local VModule, VUtil
+local V = {
+    AutoTrick=false, AutoTrickThread=nil, AutoTrickDebug=false,
+    SkateControl=false, AntiRebound=false,
+    UnlimitedSk8=false, AutoFarmSk8=false, AutoFarmSk8Started=false, CustomStats=false,
+    Sk8Everywhere=false, Sk8EverywhereThread=nil, AutoPhase=false, AutoPhaseThread=nil,
+    Sk8Speed=1.15, Sk8TrickSpeed=1.42, Sk8BumpPower=11.9, Sk8TrickStamina=10, Sk8TrickCooldown=1,
+    WallTrickEnabled=false, WallTrickRadius=5,
+    WallTrickCooldown=0.15, WallTrickLast=0, WallTrickMode="Key",
+    WallTrickRequireSkate=true, WallTrickUseHighlight=false,
+    WallTrickLastWall=nil,
+}
+local function veeModules()
+    local assets = ReplicatedStorage:FindFirstChild("Assets"); if not assets then return end
+    if not VModule then pcall(function() VModule = require(assets.Survivors.Veeronica.Behavior) end) end
+    if not VUtil then pcall(function() VUtil = require(ReplicatedStorage.Modules.Utilities.Util) end) end
+end
+local function veeSetStat(k, val)
+    if VModule then VModule[k] = val end
+    pcall(function()
+        for _, t in pairs(getgc(true)) do
+            if type(t) == "table" and rawget(t, "DisplayName") == "Veeronica" then t[k] = val end
+        end
+    end)
+end
+local function veeApplyStats()
+    if not V.CustomStats then return end
+    veeSetStat("Sk8Speed", V.Sk8Speed); veeSetStat("Sk8SpeedExhaust", V.Sk8Speed)
+    veeSetStat("Sk8TrickAirborneSpeed", V.Sk8TrickSpeed)
+    veeSetStat("Sk8BumpPower", V.Sk8BumpPower); veeSetStat("Sk8BumpChargedPower", V.Sk8BumpPower)
+    veeSetStat("Sk8TrickStamina", V.Sk8TrickStamina); veeSetStat("Sk8TrickStaminaNerfed", V.Sk8TrickStamina)
+    veeSetStat("Sk8TrickCooldown", V.Sk8TrickCooldown)
+end
+local function veeResetStats()
+    veeSetStat("Sk8Speed", 1.15); veeSetStat("Sk8SpeedExhaust", 1.15)
+    veeSetStat("Sk8TrickAirborneSpeed", 1.42)
+    veeSetStat("Sk8BumpPower", 11.9); veeSetStat("Sk8BumpChargedPower", 15)
+    veeSetStat("Sk8TrickStamina", 10); veeSetStat("Sk8TrickStaminaNerfed", 4)
+    veeSetStat("Sk8TrickCooldown", 1)
+end
+local function veeIsVee()
+    local c = lp.Character; if not c then return false end
+    local name = c:GetAttribute("CharacterName") or c.Name
+    return name == "Veeronica"
+end
+local function veeKillers()
+    if KillersFolder then return KillersFolder end
+    local p = workspace:FindFirstChild("Players")
+    return p and p:FindFirstChild("Killers")
+end
+local function veeWallCheck()
+    local mr = getMyRoot()
+    local myChar = lp.Character
+    if not mr or not myChar then return false, nil end
+    local height = 5
+    local okBB, _, sizeBB = pcall(function() return myChar:GetBoundingBox() end)
+    if okBB and sizeBB then height = math.max(sizeBB.Y, 3) end
+    local R = math.clamp(V.WallTrickRadius or 5, 1, 10)
+    local boxSize = Vector3.new(R * 2, height, R * 2)
+    local center = mr.Position
+    local params = OverlapParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    local exclude = { myChar }
+    local pf = workspace:FindFirstChild("Players")
+    if pf then table.insert(exclude, pf) end
+    params.FilterDescendantsInstances = exclude
+    local parts = workspace:GetPartBoundsInBox(CFrame.new(center), boxSize, params)
+    local nearestInst, nearestDist = nil, math.huge
+    for _, p in ipairs(parts) do
+        if p:IsA("BasePart") and p.CanCollide then
+            local minHoriz = math.min(p.Size.X, p.Size.Z)
+            if minHoriz > 0.05 and p.Size.Y >= minHoriz * 0.5 then
+                local d = (p.Position - center).Magnitude
+                if d < nearestDist then nearestDist = d; nearestInst = p end
+            end
+        end
+    end
+    if nearestInst then return true, nearestInst end
+    return false, nil
+end
+local function veeFireStamButton()
+    if not PlayerGui then return false end
+    local targets = {}
+    local main = PlayerGui:FindFirstChild("MainUI")
+    if main then
+        for _, n in ipairs({ "SprintingButton", "StaminaButton", "SprintButton" }) do
+            local b = main:FindFirstChild(n)
+            if b and b:IsA("GuiButton") then table.insert(targets, b) end
+        end
+        local ac = main:FindFirstChild("AbilityContainer")
+        if ac then
+            for _, n in ipairs({ "Sprint", "Stamina", "Sk8", "Skate" }) do
+                local b = ac:FindFirstChild(n)
+                if b and b:IsA("GuiButton") then table.insert(targets, b) end
+            end
+        end
+    end
+    for _, b in ipairs(targets) do
+        if firesignalF then
+            if pcall(firesignalF, b.MouseButton1Click) then return true end
+        end
+    end
+    return false
+end
+local function veePressJump()
+    local ok = pcall(function()
+        VIM:SendKeyEvent(true, Enum.KeyCode.Space, false, false)
+        task.wait(0.03)
+        VIM:SendKeyEvent(false, Enum.KeyCode.Space, false, false)
+    end)
+    return ok
+end
+local function veeDoTrickInput()
+    local fired = false
+    if V.WallTrickMode == "Button" or V.WallTrickMode == "Both" then
+        fired = veeFireStamButton()
+    end
+    if V.WallTrickMode == "Key" or V.WallTrickMode == "Both" or not fired then
+        pcall(veePressJump)
+    end
+end
+local function veeIsSkating()
+    if not V.WallTrickRequireSkate then return true end
+    local c = lp.Character; if not c then return false end
+    local hrp = c:FindFirstChild("HumanoidRootPart"); if not hrp then return false end
+    return hrp:FindFirstChild("SkatePointer") ~= nil
+end
+local function veeAutoTrickStart()
+    if V.AutoTrickThread then pcall(task.cancel, V.AutoTrickThread); V.AutoTrickThread = nil end
+    if not V.AutoTrick then return end
+    V.AutoTrickThread = task.spawn(function()
+        while V.AutoTrick do
+            RunService.Heartbeat:Wait()
+            if not V.AutoTrick then break end
+            local c = lp.Character
+            if not c or not veeIsVee() then continue end
+            if not veeIsSkating() then continue end
+            local hasWall, wallInst
+            if V.WallTrickUseHighlight and veeHighlighted(c) then
+                hasWall = true; wallInst = nil
+            else
+                hasWall, wallInst = veeWallCheck()
+            end
+            if not hasWall then V.WallTrickLastWall = nil; continue end
+            if wallInst and V.WallTrickLastWall == wallInst then continue end
+            if os.clock() - (V.WallTrickLast or 0) >= (V.WallTrickCooldown or 0.15) then
+                V.WallTrickLast = os.clock()
+                V.WallTrickLastWall = wallInst
+                pcall(veeDoTrickInput)
+            end
+        end
+    end)
+end
+local function veeSkateCtrl(v)
+    veeModules()
+    local val = v and 6.5 or 0.65
+    if VModule then VModule.Sk8TurnControl = val end
+end
+local veeARInstalled = false
+local function veeInstallAR()
+    if veeARInstalled or not hookmetamethod or not getnamecallmethod then return end
+    veeARInstalled = true
+    local old
+    old = hookmetamethod(game, "__namecall", function(self, ...)
+        if not V.AntiRebound then return old(self, ...) end
+        if getnamecallmethod() == "FireServer" and self == RemoteEvent then
+            local a = {...}
+            local first = tostring(a[1] or "")
+            local pn = lp.Name
+            if veeIsVee() then
+                if first == pn .. "SkateRebound" then return end
+            end
+        end
+        return old(self, ...)
+    end)
+end
+local veeUSk8 = false
+local function veeInstallUSk8()
+    if veeUSk8 then return end
+    veeUSk8 = true
+    RunService.Heartbeat:Connect(function()
+        if not V.UnlimitedSk8 or not Sprinting then return end
+        local c = lp.Character; if not c then return end
+        local hrp = c:FindFirstChild("HumanoidRootPart"); if not hrp then return end
+        if hrp:FindFirstChild("SkatePointer") then Sprinting.Stamina = Sprinting.MaxStamina end
+    end)
+end
+local function veeFarmStart()
+    if V.AutoFarmSk8Started then return end
+    V.AutoFarmSk8Started = true
+    task.spawn(function()
+        while true do
+            if V.AutoFarmSk8 and RemoteEvent then
+                pcall(function() RemoteEvent:FireServer(lp.Name .. "SkateTrick", {}) end)
+                task.wait(0.5)
+            else
+                task.wait(0.1)
+            end
+        end
+    end)
+end
+local function veeAutoPhase(v)
+    if V.AutoPhaseThread then pcall(task.cancel, V.AutoPhaseThread); V.AutoPhaseThread = nil end
+    if not v then return end
+    local Network
+    pcall(function() Network = require(ReplicatedStorage.Modules.Network.Network) end)
+    V.AutoPhaseThread = task.spawn(function()
+        while task.wait(0.5) do
+            if not V.AutoPhase then break end
+            if not Network then pcall(function() Network = require(ReplicatedStorage.Modules.Network.Network) end) end
+            local kf = veeKillers()
+            if Network and veeIsVee() and kf then
+                for _, k in ipairs(kf:GetChildren()) do
+                    if not V.AutoPhase then break end
+                    local h = k:FindFirstChildOfClass("Humanoid")
+                    if h and h.Health > 0 then
+                        pcall(function()
+                            Network:FireServerConnection(lp.Name .. "SkatePhase", "REMOTE_EVENT", k)
+                        end)
+                        task.wait((VModule and VModule.Sk8PhaseTime or 3) + 0.6)
+                    end
+                end
+            end
+        end
+    end)
+end
+
+setProgress(75, "Finalizing UI...")
+
+-- =========================================================
+-- BUILD FLUENT UI
+-- =========================================================
+local Window = Fluent:CreateWindow({
+    Title = "SCP Hub",
+    SubTitle = "v5 · Fluent-Renewed",
+    TabWidth = 140,
+    Size = UDim2.fromOffset(560, 420),
+    Acrylic = true,
+    Theme = "Dark",
+    MinimizeKey = Enum.KeyCode.RightShift,
+})
+
+local Tabs = {
+    ESP       = Window:AddTab({ Title = "ESP", Icon = "eye" }),
+    AutoBlock = Window:AddTab({ Title = "Auto Block", Icon = "shield" }),
+    Box       = Window:AddTab({ Title = "Box", Icon = "box" }),
+    Gen       = Window:AddTab({ Title = "Gen", Icon = "settings" }),
+    Stamina   = Window:AddTab({ Title = "Stamina", Icon = "zap" }),
+    HDT       = Window:AddTab({ Title = "HDT", Icon = "mouse-pointer" }),
+    Aim       = Window:AddTab({ Title = "Aim", Icon = "crosshair" }),
+    Veeronica = Window:AddTab({ Title = "Veeronica", Icon = "sparkles" }),
+    Misc      = Window:AddTab({ Title = "Misc", Icon = "cog" }),
+    UI        = Window:AddTab({ Title = "UI Settings", Icon = "settings" }),
+}
+
+-- ESP Tab
+do
+    local g = Tabs.ESP:AddLeftGroupbox("Killer ESP")
+    g:AddToggle("KillerESP", { Title = "Enabled", Default = true, Callback = function(v) ESP_CFG.Killers.Enabled = v end })
+    g:AddToggle("KillerBox", { Title = "Box", Default = true, Callback = function(v) ESP_CFG.Killers.Box = v end })
+    g:AddToggle("KillerChams", { Title = "Chams", Default = true, Callback = function(v) ESP_CFG.Killers.Chams = v end })
+    g:AddToggle("KillerName", { Title = "Name", Default = true, Callback = function(v) ESP_CFG.Killers.Name = v end })
+    g:AddToggle("KillerDist", { Title = "Distance", Default = true, Callback = function(v) ESP_CFG.Killers.Distance = v end })
+
+    local gr = Tabs.ESP:AddRightGroupbox("Survivor ESP")
+    gr:AddToggle("SurvESP", { Title = "Enabled", Default = true, Callback = function(v) ESP_CFG.Survivors.Enabled = v end })
+    gr:AddToggle("SurvBox", { Title = "Box", Default = true, Callback = function(v) ESP_CFG.Survivors.Box = v end })
+    gr:AddToggle("SurvChams", { Title = "Chams", Default = true, Callback = function(v) ESP_CFG.Survivors.Chams = v end })
+    gr:AddToggle("SurvName", { Title = "Name", Default = true, Callback = function(v) ESP_CFG.Survivors.Name = v end })
+    gr:AddToggle("SurvDist", { Title = "Distance", Default = true, Callback = function(v) ESP_CFG.Survivors.Distance = v end })
+
+    local gw = Tabs.ESP:AddLeftGroupbox("World")
+    gw:AddToggle("GenESP", { Title = "Generators", Default = false, Callback = function(v) ESP_CFG.Generators.Enabled = v end })
+    gw:AddToggle("ItemESP", { Title = "Items", Default = false, Callback = function(v) ESP_CFG.Items.Enabled = v end })
+    gw:AddButton({ Title = "Clear All ESP", Callback = function()
+        for m in pairs(ESP_TRACK) do espClear(m) end
+        Fluent:Notify({ Title = "SCP Hub", Content = "ESP cleared", Duration = 3 })
+    end })
+end
+
+-- Auto Block Tab
+do
+    local g = Tabs.AutoBlock:AddLeftGroupbox("Auto Block")
+    g:AddToggle("AB", { Title = "Enable Auto Block", Default = false, Callback = function(v) AB_Cfg.Enabled = v end })
+    g:AddToggle("ABSnd", { Title = "Sound Trigger", Default = true, Callback = function(v) AB_Cfg.SoundTrigger = v end })
+    g:AddToggle("ABAnim", { Title = "Animation Trigger", Default = true, Callback = function(v) AB_Cfg.AnimTrigger = v end })
+    g:AddToggle("ABWall", { Title = "Wall Check", Default = true, Callback = function(v) AB_Cfg.WallCheck = v end })
+    g:AddButton({ Title = "Block Now", Callback = function() task.spawn(fireBlock) end })
+
+    local gb = Tabs.AutoBlock:AddRightGroupbox("Behead")
+    gb:AddToggle("ABIgnore", { Title = "Ignore Behead Sounds", Default = true, Callback = function(v) IGNORE_BEHEAD = v end })
+    gb:AddToggle("ABLog", { Title = "Log IDs", Default = false, Callback = function(v) LOG_IDS = v end })
+    gb:AddButton({ Title = "Mark Last as Behead", Callback = function()
+        if _G.SCPHub_LastLoggedID then
+            BEHEAD_IDS[_G.SCPHub_LastLoggedID] = true
+            Fluent:Notify({ Title = "SCP Hub", Content = "Behead: " .. _G.SCPHub_LastLoggedID, Duration = 3 })
+        end
+    end })
+end
+
+-- Box Tab
+do
+    local g = Tabs.Box:AddLeftGroupbox("Box Settings")
+    g:AddToggle("BoxOn", { Title = "Show Box", Default = false, Callback = function(v)
+        BoxCfg.Enabled = v
+        if not v then for k in pairs(BoxCfg.Boxes) do destroyLongBox(k) end
+        else task.spawn(ensureBoxes) end
+    end })
+    g:AddDropdown("BoxMode", { Title = "Appear Mode", Values = { "M1", "Always" }, Default = "M1",
+        Callback = function(v)
+            BoxCfg.AppearMode = v
+            if v == "Always" then task.spawn(ensureBoxes)
+            else for k in pairs(BoxCfg.Boxes) do destroyLongBox(k) end end
+        end })
+    g:AddSlider("MaxBoxes", { Title = "Boxes per M1", Min = 1, Max = 5, Default = 1, Rounding = 0,
+        Callback = function(v) BoxCfg.MaxBoxes = v end })
+    g:AddSlider("BoxWidth", { Title = "Box Width", Min = 1, Max = 60, Default = 12, Rounding = 0,
+        Callback = function(v) BoxCfg.BoxWidth = v end })
+    g:AddSlider("BoxLength", { Title = "Box Length", Min = 1, Max = 120, Default = 30, Rounding = 0,
+        Callback = function(v) BoxCfg.BoxLength = v end })
+    g:AddSlider("BoxHeight", { Title = "Box Height", Min = 1, Max = 30, Default = 8, Rounding = 0,
+        Callback = function(v) BoxCfg.BoxHeight = v end })
+    g:AddSlider("BoxTrans", { Title = "Box Transparency", Min = 0, Max = 1, Default = 0.9, Rounding = 2,
+        Callback = function(v) BoxCfg.BoxTransparency = v end })
+end
+
+-- Gen Tab
+do
+    local g = Tabs.Gen:AddLeftGroupbox("Auto Generator")
+    g:AddToggle("GenOn", { Title = "Enable Auto Gen", Default = false, Callback = function(v)
+        AUTOGEN.Enabled = v; autogenLoop()
+    end })
+    g:AddSlider("GenRange", { Title = "Range", Min = 5, Max = 30, Default = 10, Rounding = 0,
+        Callback = function(v) AUTOGEN.MaxDistance = v end })
+    g:AddSlider("GenInt", { Title = "Interval", Min = 0.5, Max = 5, Default = 1.05, Rounding = 2,
+        Callback = function(v) AUTOGEN.Interval = v end })
+end
+
+-- Stamina Tab
+do
+    local g = Tabs.Stamina:AddLeftGroupbox("Sprint")
+    g:AddDropdown("StamMode", { Title = "Preset", Values = { "Regular", "Semi", "Infinite" }, Default = "Regular",
+        Callback = function(v) stamSetMode(v) end })
+end
+
+-- HDT Tab
+do
+    local g = Tabs.HDT:AddLeftGroupbox("HDT")
+    g:AddToggle("HDTOn", { Title = "Enabled", Default = false, Callback = function(v) HDT.Enabled = v end })
+    g:AddToggle("HDTAuto", { Title = "Auto on Block", Default = true, Callback = function(v) HDT.AutoTrigger = v end })
+    g:AddSlider("HDTSpd", { Title = "Speed", Min = 2, Max = 40, Default = 12, Rounding = 0,
+        Callback = function(v) HDT.Speed = v end })
+    g:AddSlider("HDTStop", { Title = "Stop Distance", Min = 0.5, Max = 10, Default = 2, Rounding = 1,
+        Callback = function(v) HDT.StopDistance = v end })
+    g:AddButton({ Title = "Trigger Now (Q)", Callback = function()
+        task.spawn(function() pcall(function() HDT_Trigger(true) end) end)
+    end })
+end
+
+-- Aim Tab
+do
+    local g = Tabs.Aim:AddLeftGroupbox("Survivor Stun Aim")
+    g:AddToggle("AimOn", { Title = "Enabled", Default = false, Callback = function(v) AIM.Enabled = v end })
+    g:AddToggle("AimStun", { Title = "Aim on Stun", Default = true, Callback = function(v) AbilityHook.Enabled = v end })
+    g:AddDropdown("AimMode", { Title = "Aim Mode", Values = {"Camera","HRP","HRP+Camera"}, Default = "Camera",
+        Callback = function(v) AIM.AimMode = v end })
+    g:AddDropdown("AimPred", { Title = "Prediction", Values = {"Off","Ping","Velocity","Both"}, Default = "Both",
+        Callback = function(v) AIM.PredictMode = v end })
+    g:AddSlider("AimSmooth", { Title = "Smooth", Min = 0.05, Max = 1, Default = 1.0, Rounding = 2,
+        Callback = function(v) AIM.Smooth = v end })
+
+    local gr = Tabs.Aim:AddRightGroupbox("Chance Aimlock")
+    gr:AddToggle("ChanceAim", { Title = "Enable", Default = false, Callback = function(v)
+        ChanceAimbot.Enabled = v
+        if v then chanceScanButtons() else ChanceAimbot._isLocking = false; ChanceAimbot._hooked = {} end
+    end })
+    gr:AddKeyPicker("ChanceKey", { Title = "Keybind", Default = "V", Mode = "Press", NoUI = false,
+        Callback = function()
+            if ChanceAimbot.Enabled then chanceStartAimlock() end
+        end })
+end
+
+-- Veeronica Tab
+do
+    local g = Tabs.Veeronica:AddLeftGroupbox("Tricks")
+    g:AddToggle("VAutoTrick", { Title = "Auto Trick (Wall Box)", Default = false, Callback = function(v) V.AutoTrick = v; veeAutoTrickStart() end })
+    g:AddSlider("VWallRadius", { Title = "Wall Radius", Min = 1, Max = 10, Default = 5, Rounding = 1,
+        Callback = function(v) V.WallTrickRadius = v end })
+    g:AddDropdown("VWallMode", { Title = "Input Method", Values = {"Key","Button","Both"}, Default = "Key",
+        Callback = function(v) V.WallTrickMode = v end })
+    g:AddToggle("VSkateCtrl", { Title = "Skate Control", Default = false, Callback = function(v) V.SkateControl = v; veeSkateCtrl(v) end })
+    g:AddToggle("VARebound", { Title = "Anti Rebound", Default = false, Callback = function(v) V.AntiRebound = v; if v then veeInstallAR() end end })
+    g:AddToggle("VUSk8", { Title = "Unlimited Sk8", Default = false, Callback = function(v) V.UnlimitedSk8 = v; if v then veeInstallUSk8() end end })
+    g:AddToggle("VFarmSk8", { Title = "Auto Farm sk8", Default = false, Callback = function(v) V.AutoFarmSk8 = v; if v then veeFarmStart() end end })
+    g:AddToggle("VAutoPhase", { Title = "Auto Phase", Default = false, Callback = function(v) V.AutoPhase = v; veeAutoPhase(v) end })
+
+    local gr = Tabs.Veeronica:AddRightGroupbox("Custom Stats")
+    gr:AddToggle("VCStats", { Title = "Enable", Default = false, Callback = function(v) V.CustomStats = v; if v then veeApplyStats() else veeResetStats() end end })
+    gr:AddSlider("VSk8Spd", { Title = "Skate Speed", Min = 1, Max = 10, Default = 1.15, Rounding = 2,
+        Callback = function(v) V.Sk8Speed = v; if V.CustomStats then veeSetStat("Sk8Speed", v) end end })
+    gr:AddSlider("VTrkBoost", { Title = "Trick Boost", Min = 1, Max = 15, Default = 1.42, Rounding = 2,
+        Callback = function(v) V.Sk8TrickSpeed = v; if V.CustomStats then veeSetStat("Sk8TrickAirborneSpeed", v) end end })
+    gr:AddSlider("VBump", { Title = "Bump Power", Min = 10, Max = 150, Default = 11.9, Rounding = 1,
+        Callback = function(v) V.Sk8BumpPower = v; if V.CustomStats then veeSetStat("Sk8BumpPower", v) end end })
+end
+
+-- Misc Tab
+do
+    local g = Tabs.Misc:AddLeftGroupbox("Utility")
+    g:AddButton({ Title = "Fullbright", Callback = function()
+        pcall(function()
+            Lighting.Ambient = Color3.new(1,1,1)
+            Lighting.OutdoorAmbient = Color3.new(1,1,1)
+            Lighting.Brightness = 2
+            Lighting.ClockTime = 12
+        end)
+    end })
+    g:AddButton({ Title = "Show Chat", Callback = function()
+        pcall(function()
+            local c = TextChatService:FindFirstChildOfClass("ChatWindowConfiguration")
+            local i = TextChatService:FindFirstChildOfClass("ChatInputBarConfiguration")
+            if c then c.Enabled = true end
+            if i then i.Enabled = true end
+        end)
+    end })
+    g:AddButton({ Title = "Reset Character", Callback = function()
+        local h = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
+        if h then h.Health = 0 end
+    end })
+end
+
+-- UI Settings Tab
+do
+    local g = Tabs.UI:AddLeftGroupbox("Menu")
+    g:AddKeyPicker("MenuKey", { Title = "Menu Key", Default = "RightShift", Mode = "Toggle", NoUI = true })
+    g:AddButton({ Title = "Unload", Callback = function() Fluent:Destroy() end })
+end
+
+-- Save manager
+SaveManager:SetLibrary(Fluent)
+InterfaceManager:SetLibrary(Fluent)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({ "MenuKey" })
+SaveManager:SetFolder("SCPHub")
+SaveManager:BuildConfigSection(Tabs.UI)
+InterfaceManager:ApplyToTab(Tabs.UI)
+SaveManager:LoadAutoloadConfig()
 
 -- input for HDT
 if _G.SCPHubInput then pcall(function() _G.SCPHubInput:Disconnect() end) end
@@ -1460,7 +1842,7 @@ _G.SCPHubInput = UIS.InputBegan:Connect(function(input, gpe)
     end
 end)
 
-setProgress(95, "Finalizing...")
+setProgress(95, "Ready!")
 task.wait(0.2)
 pcall(function()
     StarterGui:SetCore("SendNotification", {

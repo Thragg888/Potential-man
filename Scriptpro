@@ -1,11 +1,232 @@
--- Wind Hub v1 — assembled build with all fixes
--- Fixes applied: non-blocking UI load · Auto Gen precise timing · Auto Block/ESP round-survival
--- · FacingVisual box off+transparent by default · ESP fill/outline transparency sliders
--- · Auto Trick wall-proximity (nearest wall only, skips same wall, cooldown 0-10s)
--- · Killers tab removed · Killer ESP fixed (per-category tracking)
--- · Auto Block uses BOTH sound + killer-animation detection · Veeronica tab wall-trick
+-- SCP Hub — assembled build
+-- · Dark theme · Loading screen (assets 9859971171 / 9859971166)
+-- · UI Settings tab fixed (theme + save manager) · Veeronica invisible-box wall detection
+-- · Auto Block uses BOTH sound + killer-animation detection · Killer ESP per-category
 
+-- =========================================================
+-- Bootstrap + Services (early so loading screen has them)
+-- =========================================================
 repeat task.wait() until game:IsLoaded()
+
+local Players           = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService        = game:GetService("RunService")
+local Workspace         = game:GetService("Workspace")
+local Stats             = game:GetService("Stats")
+local UIS               = game:GetService("UserInputService")
+local VIM               = game:GetService("VirtualInputManager")
+local TweenService      = game:GetService("TweenService")
+local ContentProvider   = game:GetService("ContentProvider")
+local CoreGui           = game:GetService("CoreGui")
+
+local lp = Players.LocalPlayer
+local PlayerGui = lp:FindFirstChildOfClass("PlayerGui") or lp:WaitForChild("PlayerGui", 10)
+
+-- =========================================================
+-- LOADING SCREEN (shown on top; created before Library loads)
+-- =========================================================
+local Loading = {
+    StartTime = tick(),
+    MinDisplayTime = 3.0,
+    Progress = 0,
+    Done = false,
+    GUI = nil, Bar = nil, BarBG = nil, Pct = nil, Status = nil, Logo = nil,
+}
+
+local function safeTween(inst, ti, props)
+    if not inst or not inst.Parent then return nil end
+    local ok, t = pcall(function() return TweenService:Create(inst, ti, props) end)
+    if ok and t then pcall(function() t:Play() end); return t end
+    return nil
+end
+
+local function createLoadingScreen()
+    local ok = pcall(function()
+        local parent = CoreGui
+        local gui = Instance.new("ScreenGui")
+        gui.Name = "SCPHubLoading"
+        gui.IgnoreGuiInset = true
+        gui.DisplayOrder = 2147483647
+        gui.ResetOnSpawn = false
+        gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+        local parentOK = pcall(function() gui.Parent = CoreGui end)
+        if not parentOK or not gui.Parent then
+            gui.Parent = PlayerGui
+        end
+
+        -- Background
+        local bg = Instance.new("Frame")
+        bg.Name = "BG"
+        bg.Size = UDim2.fromScale(1, 1)
+        bg.BackgroundColor3 = Color3.fromRGB(8, 8, 10)
+        bg.BorderSizePixel = 0
+        bg.ZIndex = 1
+        bg.Parent = gui
+
+        -- Logo container (aspect-locked so image isn't stretched)
+        local logoFrame = Instance.new("Frame")
+        logoFrame.Name = "LogoFrame"
+        logoFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+        logoFrame.Position = UDim2.fromScale(0.5, 0.4)
+        logoFrame.Size = UDim2.fromScale(0.32, 0.32)
+        logoFrame.BackgroundTransparency = 1
+        logoFrame.ZIndex = 3
+        logoFrame.Parent = gui
+        local logoAspect = Instance.new("UIAspectRatioConstraint")
+        logoAspect.AspectRatio = 1
+        logoAspect.Parent = logoFrame
+
+        local logo = Instance.new("ImageLabel")
+        logo.Name = "Logo"
+        logo.Size = UDim2.fromScale(1, 1)
+        logo.BackgroundTransparency = 1
+        logo.Image = "rbxassetid://9859971171"
+        logo.ImageTransparency = 0
+        logo.ZIndex = 3
+        logo.Parent = logoFrame
+
+        -- Try preload; swap to fallback if it fails
+        task.spawn(function()
+            local preOK = pcall(function() ContentProvider:PreloadAsync({ logo }) end)
+            local hasSize = false
+            pcall(function()
+                hasSize = logo.ImageRectSize.X > 0 and logo.ImageRectSize.Y > 0
+            end)
+            if not preOK or not hasSize then
+                pcall(function() logo.Image = "rbxassetid://9859971166" end)
+            end
+        end)
+
+        -- Title
+        local title = Instance.new("TextLabel")
+        title.Name = "Title"
+        title.AnchorPoint = Vector2.new(0.5, 0)
+        title.Position = UDim2.fromScale(0.5, 0.60)
+        title.Size = UDim2.fromScale(0.5, 0.055)
+        title.BackgroundTransparency = 1
+        title.Font = Enum.Font.GothamBold
+        title.Text = "SCP HUB"
+        title.TextColor3 = Color3.fromRGB(220, 40, 40)
+        title.TextScaled = true
+        title.TextStrokeTransparency = 0.5
+        title.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+        title.ZIndex = 3
+        title.Parent = gui
+
+        -- Bar background
+        local barBG = Instance.new("Frame")
+        barBG.Name = "BarBG"
+        barBG.AnchorPoint = Vector2.new(0.5, 0.5)
+        barBG.Position = UDim2.fromScale(0.5, 0.73)
+        barBG.Size = UDim2.fromScale(0.42, 0.012)
+        barBG.BackgroundColor3 = Color3.fromRGB(30, 30, 34)
+        barBG.BorderSizePixel = 0
+        barBG.ZIndex = 3
+        barBG.Parent = gui
+        local barCorner = Instance.new("UICorner")
+        barCorner.CornerRadius = UDim.new(0, 6)
+        barCorner.Parent = barBG
+
+        local bar = Instance.new("Frame")
+        bar.Name = "BarFill"
+        bar.Size = UDim2.fromScale(0, 1)
+        bar.BackgroundColor3 = Color3.fromRGB(200, 30, 30)
+        bar.BorderSizePixel = 0
+        bar.ZIndex = 4
+        bar.Parent = barBG
+        local barFillCorner = Instance.new("UICorner")
+        barFillCorner.CornerRadius = UDim.new(0, 6)
+        barFillCorner.Parent = bar
+
+        -- Percent
+        local pct = Instance.new("TextLabel")
+        pct.Name = "Percent"
+        pct.AnchorPoint = Vector2.new(0.5, 0)
+        pct.Position = UDim2.fromScale(0.5, 0.755)
+        pct.Size = UDim2.fromScale(0.5, 0.035)
+        pct.BackgroundTransparency = 1
+        pct.Font = Enum.Font.Gotham
+        pct.Text = "0%"
+        pct.TextColor3 = Color3.fromRGB(200, 200, 200)
+        pct.TextScaled = true
+        pct.ZIndex = 3
+        pct.Parent = gui
+
+        -- Status text
+        local status = Instance.new("TextLabel")
+        status.Name = "Status"
+        status.AnchorPoint = Vector2.new(0.5, 0)
+        status.Position = UDim2.fromScale(0.5, 0.80)
+        status.Size = UDim2.fromScale(0.7, 0.03)
+        status.BackgroundTransparency = 1
+        status.Font = Enum.Font.Gotham
+        status.Text = "Booting..."
+        status.TextColor3 = Color3.fromRGB(140, 140, 140)
+        status.TextScaled = true
+        status.ZIndex = 3
+        status.Parent = gui
+
+        Loading.GUI = gui
+        Loading.Bar = bar
+        Loading.BarBG = barBG
+        Loading.Pct = pct
+        Loading.Status = status
+        Loading.Logo = logo
+    end)
+    if not ok then
+        warn("[SCP Hub] Loading screen creation failed (non-fatal)")
+    end
+end
+
+createLoadingScreen()
+
+local function setProgress(pct, status)
+    Loading.Progress = math.clamp(tonumber(pct) or Loading.Progress, 0, 100)
+    if Loading.Done then return end
+    if Loading.GUI and Loading.GUI.Parent then
+        if Loading.Bar then
+            safeTween(Loading.Bar, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {
+                Size = UDim2.fromScale(Loading.Progress / 100, 1)
+            })
+        end
+        if Loading.Pct then
+            pcall(function() Loading.Pct.Text = math.floor(Loading.Progress) .. "%" end)
+        end
+        if Loading.Status and status then
+            pcall(function() Loading.Status.Text = tostring(status) end)
+        end
+    end
+end
+
+local function finishLoading()
+    if Loading.Done then return end
+    Loading.Done = true
+    setProgress(100, "Ready!")
+    -- enforce minimum display time
+    local elapsed = tick() - Loading.StartTime
+    if elapsed < Loading.MinDisplayTime then
+        task.wait(Loading.MinDisplayTime - elapsed)
+    end
+    local gui = Loading.GUI
+    Loading.GUI = nil
+    if not gui or not gui.Parent then return end
+    pcall(function()
+        local ti = TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut)
+        for _, d in ipairs(gui:GetDescendants()) do
+            if d:IsA("Frame") then
+                safeTween(d, ti, { BackgroundTransparency = 1 })
+            elseif d:IsA("TextLabel") or d:IsA("TextButton") then
+                safeTween(d, ti, { TextTransparency = 1, TextStrokeTransparency = 1, BackgroundTransparency = 1 })
+            elseif d:IsA("ImageLabel") then
+                safeTween(d, ti, { ImageTransparency = 1 })
+            end
+        end
+        task.wait(0.65)
+        if gui and gui.Parent then gui:Destroy() end
+    end)
+end
+
+setProgress(5, "Loading UI library...")
 
 -- =========================================================
 -- Obsidian
@@ -16,28 +237,19 @@ local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))
 local SaveManager  = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
 local Options = Library.Options
 
--- =========================================================
--- Services
--- =========================================================
-local Players            = game:GetService("Players")
-local ReplicatedStorage  = game:GetService("ReplicatedStorage")
-local RunService         = game:GetService("RunService")
-local Workspace          = game:GetService("Workspace")
-local Stats              = game:GetService("Stats")
-local UIS                = game:GetService("UserInputService")
-local VIM                = game:GetService("VirtualInputManager")
+setProgress(15, "Setting up services...")
 
-local lp = Players.LocalPlayer
-local PlayerGui = lp:FindFirstChildOfClass("PlayerGui") or lp:WaitForChild("PlayerGui", 10)
+-- =========================================================
+-- Camera watcher
+-- =========================================================
+local Camera = Workspace.CurrentCamera
+Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+    if Workspace.CurrentCamera then Camera = Workspace.CurrentCamera end
+end)
 
 local MainUI
 task.spawn(function()
     MainUI = PlayerGui:WaitForChild("MainUI", 300)
-end)
-
-local Camera = Workspace.CurrentCamera
-Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
-    if Workspace.CurrentCamera then Camera = Workspace.CurrentCamera end
 end)
 
 -- =========================================================
@@ -49,7 +261,7 @@ do
     local net1 = mods and mods:FindFirstChild("Network")
     local net2 = net1 and net1:FindFirstChild("Network")
     RemoteEvent = net2 and net2:FindFirstChild("RemoteEvent")
-    if not RemoteEvent then warn("[Wind Hub] RemoteEvent not found") end
+    if not RemoteEvent then warn("[SCP Hub] RemoteEvent not found") end
 end
 
 local PlayersFolder   = Workspace:FindFirstChild("Players")
@@ -166,7 +378,7 @@ end
 local BEHEAD_SOUND_IDS = {}
 local IGNORE_BEHEAD    = true
 local LOG_TRIGGER_IDS  = false
-_G.WindHub_LastLoggedID = nil
+_G.SCPHub_LastLoggedID = nil
 
 -- =========================================================
 -- M1 animations
@@ -182,8 +394,10 @@ for _, id in ipairs({
     "121086746534252","18885909645","98456918873918","105458270463374",
 }) do M1_ANIM_IDS[id] = true end
 
+setProgress(25, "Loading killer attack data...")
+
 -- =========================================================
--- Forsaken Plus style attack detection (animation → QueryHitbox)
+-- Forsaken Plus style attack detection
 -- =========================================================
 local BLOCKABLE_ATTACKS = {
     ["slash"]=true, ["enragedslash"]=true, ["stab"]=true, ["attack"]=true,
@@ -258,14 +472,6 @@ local FacingVisual = {
     circles = {},
 }
 
-local OVERLAP = OverlapParams.new()
-OVERLAP.FilterType = Enum.RaycastFilterType.Include
-local function refreshOverlapFilter()
-    OVERLAP.FilterDescendantsInstances = lp.Character and { lp.Character } or {}
-end
-lp.CharacterAdded:Connect(function() task.wait(0.1); refreshOverlapFilter() end)
-refreshOverlapFilter()
-
 local function boxShouldShow(killer)
     if not FacingVisual.BoxEnabled then return false end
     if FacingVisual.AppearMode == "Always" then return true end
@@ -290,7 +496,7 @@ local function createCircle(killer)
     if FacingVisual.circles[killer] then return end
     local hrp = killer:FindFirstChild("HumanoidRootPart"); if not hrp then return end
     local adorn = Instance.new("CylinderHandleAdornment")
-    adorn.Name = "WindHubFacingCircle"
+    adorn.Name = "SCPHubFacingCircle"
     adorn.Adornee = hrp; adorn.AlwaysOnTop = true; adorn.ZIndex = 2
     adorn.Radius = FacingVisual.CircleRadius
     adorn.Height = FacingVisual.CircleHeight
@@ -321,7 +527,7 @@ local function createBox(killer)
     if not killer or not killer:IsA("Model") then return end
     destroyBox(killer)
     local part = Instance.new("Part")
-    part.Name = "WindHubDetectionBox"
+    part.Name = "SCPHubDetectionBox"
     part.Anchored = true; part.CanCollide = false; part.CanTouch = false
     part.Massless = true; part.CastShadow = false
     part.Material = Enum.Material.Neon
@@ -330,7 +536,7 @@ local function createBox(killer)
     part.Size = Vector3.new(FacingVisual.BoxWidth, FacingVisual.BoxHeight, FacingVisual.BoxLength)
     part.Parent = killer
     local hl = Instance.new("Highlight")
-    hl.Name = "WindHubDetectionHighlight"
+    hl.Name = "SCPHubDetectionHighlight"
     hl.FillTransparency = 1
     hl.OutlineColor = FacingVisual.BoxColor
     hl.OutlineTransparency = FacingVisual.BoxOutlineTransparency or 0
@@ -547,7 +753,7 @@ local function performBlockCheck(killerModel)
     flat = flat.Unit
 
     local checkPart = Instance.new("Part")
-    checkPart.Name = "WindHubBlockCheck"
+    checkPart.Name = "SCPHubBlockCheck"
     checkPart.Anchored = true
     checkPart.CanCollide = false
     checkPart.CanTouch = false
@@ -623,7 +829,7 @@ local function performAnimationBlockCheck(killer, attackType)
         params.FilterDescendantsInstances = { myHitbox }
 
         local part = Instance.new("Part")
-        part.Name = "WindHubAttackCheck"
+        part.Name = "SCPHubAttackCheck"
         part.Anchored = true
         part.CanCollide = false; part.CanTouch = false; part.CanQuery = false
         part.Massless = true; part.CastShadow = false
@@ -753,9 +959,9 @@ local function onSoundTrigger(sound)
     if not ancestor then return end
     local kf = KillersFolder or (Workspace:FindFirstChild("Players") and Workspace.Players:FindFirstChild("Killers"))
     if not kf or ancestor.Parent ~= kf then return end
-    _G.WindHub_LastLoggedID = id
+    _G.SCPHub_LastLoggedID = id
     if LOG_TRIGGER_IDS then
-        print(string.format("[Wind Hub] Trigger sound ID: %s | Killer: %s | Sound: %s",
+        print(string.format("[SCP Hub] Trigger sound ID: %s | Killer: %s | Sound: %s",
             id, ancestor.Name, sound.Name))
     end
     tryAutoBlock(ancestor, id)
@@ -1025,7 +1231,7 @@ task.spawn(function()
         end
     end
 end)
-RunService:BindToRenderStep("WindHubAim", Enum.RenderPriority.Camera.Value + 1, function(dt)
+RunService:BindToRenderStep("SCPHubAim", Enum.RenderPriority.Camera.Value + 1, function(dt)
     local aimActive = AIM.Enabled or (tick() < (AIM._aimUntil or 0))
     if not isPlayingSurvivor() or not aimActive or not AIM.CachedTargetHRP or not AIM.CachedTargetHRP.Parent then
         restoreAutoRotate()
@@ -1069,6 +1275,8 @@ RunService:BindToRenderStep("WindHubAim", Enum.RenderPriority.Camera.Value + 1, 
     end
     if tick() >= (AIM._aimUntil or 0) then AIM.CurrentAbility = nil end
 end)
+
+setProgress(40, "Loading aim modules...")
 
 -- =========================================================
 -- Chance aimlock
@@ -1254,7 +1462,7 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- =========================================================
--- ESP (per-category tracking)
+-- ESP
 -- =========================================================
 local ESP_CFG = {
     Killers   = { Enabled = true, Box = true, Chams = true, Name = true, Distance = true, Tracer = false,
@@ -1298,7 +1506,7 @@ end
 local function espMakeBox(model, cfg)
     local hrp = espGetHRP(model); if not hrp then return nil end
     local box = Instance.new("BoxHandleAdornment")
-    box.Name = "WindHubESPBox"; box.Adornee = hrp
+    box.Name = "SCPHubESPBox"; box.Adornee = hrp
     box.AlwaysOnTop = true; box.ZIndex = 1
     box.Size = Vector3.new(2.2, 5.5, 2.2)
     box.Color3 = cfg.OutlineColor; box.Transparency = 0.4
@@ -1307,7 +1515,7 @@ local function espMakeBox(model, cfg)
 end
 local function espMakeChams(model, cfg)
     local hl = Instance.new("Highlight")
-    hl.Name = "WindHubESPChams"; hl.Adornee = model
+    hl.Name = "SCPHubESPChams"; hl.Adornee = model
     hl.FillColor = cfg.FillColor; hl.OutlineColor = cfg.OutlineColor
     hl.FillTransparency = cfg.FillTransparency or 0.55
     hl.OutlineTransparency = cfg.OutlineTransparency or 0
@@ -1319,7 +1527,7 @@ local function espMakeBillboard(model, cfg)
     local hrp = espGetHRP(model); if not hrp then return nil end
     local head = model:FindFirstChild("Head") or hrp
     local bb = Instance.new("BillboardGui")
-    bb.Name = "WindHubESPBillboard"; bb.Adornee = head
+    bb.Name = "SCPHubESPBillboard"; bb.Adornee = head
     bb.Size = UDim2.new(0, 200, 0, 50); bb.StudsOffset = Vector3.new(0, 3, 0)
     bb.AlwaysOnTop = true; bb.MaxDistance = cfg.MaxDistance or 1500
     bb.Parent = head
@@ -1334,7 +1542,7 @@ end
 local function espMakeTracer(model, cfg)
     local hrp = espGetHRP(model); if not hrp then return nil end
     local ad = Instance.new("LineHandleAdornment")
-    ad.Name = "WindHubESPTracer"; ad.Adornee = hrp
+    ad.Name = "SCPHubESPTracer"; ad.Adornee = hrp
     ad.AlwaysOnTop = true; ad.ZIndex = 0; ad.Thickness = 2
     ad.Color3 = cfg.TracerColor; ad.Transparency = 0.3; ad.Length = 0
     ad.Parent = hrp
@@ -1447,7 +1655,7 @@ local function scanGenerators()
             local hl = GENERATOR_HIGHLIGHTS[g]
             if not hl or not hl.Parent then
                 hl = Instance.new("Highlight")
-                hl.Name = "WindHubESPGen"; hl.Adornee = g
+                hl.Name = "SCPHubESPGen"; hl.Adornee = g
                 hl.FillColor = Color3.fromRGB(255, 220, 40)
                 hl.OutlineColor = Color3.fromRGB(255, 220, 40)
                 hl.FillTransparency = 0.6; hl.OutlineTransparency = 0
@@ -1476,7 +1684,7 @@ local function scanItems()
         local hl = ITEM_HIGHLIGHTS[item]
         if not hl or not hl.Parent then
             hl = Instance.new("Highlight")
-            hl.Name = "WindHubESPItem"; hl.Adornee = handle
+            hl.Name = "SCPHubESPItem"; hl.Adornee = handle
             hl.FillColor = c; hl.OutlineColor = c
             hl.FillTransparency = 0.5; hl.OutlineTransparency = 0
             hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
@@ -1555,6 +1763,8 @@ local function autogenLoop()
     end)
 end
 
+setProgress(55, "Loading stamina module...")
+
 -- =========================================================
 -- Stamina
 -- =========================================================
@@ -1628,22 +1838,38 @@ end)
 -- =========================================================
 -- INPUT
 -- =========================================================
-if _G.WindHubInputConn then pcall(function() _G.WindHubInputConn:Disconnect() end); _G.WindHubInputConn = nil end
-_G.WindHubInputConn = UIS.InputBegan:Connect(function(input, gpe)
+if _G.SCPHubInputConn then pcall(function() _G.SCPHubInputConn:Disconnect() end); _G.SCPHubInputConn = nil end
+_G.SCPHubInputConn = UIS.InputBegan:Connect(function(input, gpe)
     if gpe then return end
     if input.KeyCode == Enum.KeyCode.Q then pcall(function() HDT_Trigger(true) end)
     elseif input.KeyCode == Enum.KeyCode.C then AimFor(3.0)
     end
 end)
 
+setProgress(70, "Building menu...")
+
 -- =========================================================
 -- OBSIDIAN UI
 -- =========================================================
 local Window = Library:CreateWindow({
-    Title = "Wind Hub v1", Footer = "v1",
+    Title = "SCP Hub", Footer = "v1",
     Icon = "wind",
     NotifySide = "Right", ShowCustomCursor = true,
 })
+
+pcall(function()
+    Library:ChangeTheme({
+        FontColor        = Color3.fromRGB(225, 225, 225),
+        MainColor        = Color3.fromRGB(16, 16, 16),
+        AccentColor      = Color3.fromRGB(180, 30, 30),
+        OutlineColor     = Color3.fromRGB(38, 38, 38),
+        BackgroundColor  = Color3.fromRGB(12, 12, 12),
+        ButtonColor      = Color3.fromRGB(24, 24, 24),
+        HoverColor       = Color3.fromRGB(200, 40, 40),
+        SliderColor      = Color3.fromRGB(180, 30, 30),
+    })
+end)
+
 local Tabs = {
     ESP        = Window:AddTab("ESP", "eye"),
     Stam       = Window:AddTab("Stamina", "zap"),
@@ -1657,6 +1883,8 @@ local Tabs = {
 local function notify(t, d)
     pcall(function() Library:Notify({ Title = t, Description = d, Time = 4 }) end)
 end
+
+setProgress(75, "Building ESP tab...")
 
 -- ESP Tab
 pcall(function()
@@ -1757,9 +1985,11 @@ pcall(function()
         for itm, hl in pairs(ITEM_HIGHLIGHTS) do pcall(function() hl:Destroy() end) end
         GENERATOR_HIGHLIGHTS = setmetatable({}, { __mode = "k" })
         ITEM_HIGHLIGHTS = setmetatable({}, { __mode = "k" })
-        notify("Wind Hub v1", "ESP cleared")
+        notify("SCP Hub", "ESP cleared")
     end })
 end)
+
+setProgress(80, "Building feature tabs...")
 
 -- Stamina Tab
 pcall(function()
@@ -1768,7 +1998,7 @@ pcall(function()
     else
         L:AddDropdown("StamPreset", { Text = "Stamina Preset",
             Values = { "Regular", "Semi cheats", "Infinite" }, Default = 1, Multi = false,
-            Callback = function(v) v = v or "Regular"; stamSetMode(v); notify("Wind Hub v1", "Stamina: " .. tostring(v)) end })
+            Callback = function(v) v = v or "Regular"; stamSetMode(v); notify("SCP Hub", "Stamina: " .. tostring(v)) end })
         L:AddLabel("Regular: vanilla behaviour")
         L:AddLabel("Semi cheats: max 150, loss 4, gain 40, sprint 28")
         L:AddLabel("Infinite: locked to MaxStamina, no drain")
@@ -1794,16 +2024,16 @@ pcall(function()
     B:AddToggle("ABLogIds", { Text = "Log Trigger IDs to Console", Default = false,
         Callback = function(v) LOG_TRIGGER_IDS = v end })
     B:AddButton({ Text = "Mark Last Logged ID as Behead", Func = function()
-        if _G.WindHub_LastLoggedID then
-            BEHEAD_SOUND_IDS[_G.WindHub_LastLoggedID] = true
-            notify("Wind Hub v1", "Behead marked: " .. _G.WindHub_LastLoggedID)
+        if _G.SCPHub_LastLoggedID then
+            BEHEAD_SOUND_IDS[_G.SCPHub_LastLoggedID] = true
+            notify("SCP Hub", "Behead marked: " .. _G.SCPHub_LastLoggedID)
         else
-            notify("Wind Hub v1", "No ID logged yet — turn on logging first")
+            notify("SCP Hub", "No ID logged yet — turn on logging first")
         end
     end })
     B:AddButton({ Text = "Clear Behead List", Func = function()
         BEHEAD_SOUND_IDS = {}
-        notify("Wind Hub v1", "Behead list cleared")
+        notify("SCP Hub", "Behead list cleared")
     end })
     B:AddLabel("1. Turn on 'Log Trigger IDs'")
     B:AddLabel("2. Get beheaded in game")
@@ -1868,6 +2098,8 @@ pcall(function()
             Callback = function(c) FacingVisual.CircleColor = c end })
     end)
 end)
+
+setProgress(85, "Building aim tab...")
 
 -- Aim Tab
 pcall(function()
@@ -1955,9 +2187,10 @@ pcall(function()
     end })
 end)
 
+setProgress(90, "Loading Veeronica tab...")
+
 -- =========================================================
--- VEERONICA TAB
--- Wall trick: nearest-wall only · skips same wall · cooldown 0-10s
+-- VEERONICA TAB (invisible-box wall detection; presses jump)
 -- =========================================================
 pcall(function()
     local V = {
@@ -1965,11 +2198,10 @@ pcall(function()
         UnlimitedSk8=false, AutoFarmSk8=false, AutoFarmSk8Started=false, CustomStats=false,
         Sk8Everywhere=false, Sk8EverywhereThread=nil, AutoPhase=false, AutoPhaseThread=nil,
         Sk8Speed=1.15, Sk8TrickSpeed=1.42, Sk8BumpPower=11.9, Sk8TrickStamina=10, Sk8TrickCooldown=1,
-        -- Wall-trick
         WallTrickEnabled=false, WallTrickThread=nil, WallTrickRadius=5,
-        WallTrickCooldown=0.15, WallTrickLast=0, WallTrickMode="Button",
+        WallTrickCooldown=0.15, WallTrickLast=0, WallTrickMode="Key",
         WallTrickRequireSkate=true, WallTrickUseHighlight=false,
-        WallTrickLastWall=nil,          -- tracks last wall instance so we don't re-click the same one
+        WallTrickLastWall=nil,
     }
     local VModule, VUtil
 
@@ -2059,47 +2291,35 @@ pcall(function()
         return h ~= nil
     end
 
-    -- =====================================================
-    -- Wall detection: 8 outward rays within radius.
-    -- Returns ONLY the NEAREST horizontal wall.
-    -- =====================================================
+    -- Invisible-box wall detection (character height)
     local function veeWallCheck()
         local myRoot = getMyRoot()
-        if not myRoot then return false, nil end
+        local myChar = lp.Character
+        if not myRoot or not myChar then return false, nil end
+
+        local height = 5
+        local okBB, _, sizeBB = pcall(function() return myChar:GetBoundingBox() end)
+        if okBB and sizeBB then height = math.max(sizeBB.Y, 3) end
+
         local R = math.clamp(V.WallTrickRadius or 5, 1, 10)
-        local params = RaycastParams.new()
+        local boxSize = Vector3.new(R * 2, height, R * 2)
+        local center = myRoot.Position
+
+        local params = OverlapParams.new()
         params.FilterType = Enum.RaycastFilterType.Exclude
-        params.IgnoreWater = true
-        local exclude = { lp.Character }
+        local exclude = { myChar }
         local pf = workspace:FindFirstChild("Players")
         if pf then table.insert(exclude, pf) end
         params.FilterDescendantsInstances = exclude
-        local origin = myRoot.Position
 
-        -- Ray sweep: keep only the NEAREST wall
+        local parts = workspace:GetPartBoundsInBox(CFrame.new(center), boxSize, params)
+
         local nearestInst, nearestDist = nil, math.huge
-        for i = 0, 7 do
-            local a = math.rad(i * 45)
-            local dir = Vector3.new(math.cos(a), 0, math.sin(a)) * R
-            local r = workspace:Raycast(origin, dir, params)
-            if r and r.Instance and math.abs(r.Normal.Y) < 0.6 then
-                local d = (r.Position - origin).Magnitude
-                if d < nearestDist then
-                    nearestDist = d
-                    nearestInst = r.Instance
-                end
-            end
-        end
-
-        -- Fallback overlap (irregular meshes): still keep only nearest
-        if not nearestInst then
-            local op = OverlapParams.new()
-            op.FilterType = Enum.RaycastFilterType.Exclude
-            op.FilterDescendantsInstances = exclude
-            local parts = workspace:GetPartBoundsInRadius(origin, R * 0.6, op)
-            for _, p in ipairs(parts) do
-                if p:IsA("BasePart") and p.CanCollide and p.Size.Y >= math.min(p.Size.X, p.Size.Z) then
-                    local d = (p.Position - origin).Magnitude
+        for _, p in ipairs(parts) do
+            if p:IsA("BasePart") and p.CanCollide then
+                local minHoriz = math.min(p.Size.X, p.Size.Z)
+                if minHoriz > 0.05 and p.Size.Y >= minHoriz * 0.5 then
+                    local d = (p.Position - center).Magnitude
                     if d < nearestDist then
                         nearestDist = d
                         nearestInst = p
@@ -2112,9 +2332,6 @@ pcall(function()
         return false, nil
     end
 
-    -- =====================================================
-    -- Fire the stam / sprint UI button (Forsaken Plus style).
-    -- =====================================================
     local function veeFireStamButton()
         local pg = lp:FindFirstChild("PlayerGui"); if not pg then return false end
         local targets = {}
@@ -2172,45 +2389,36 @@ pcall(function()
         return false
     end
 
-    -- =====================================================
-    -- Do the trick input. Prefers stam button; also fires Space.
-    -- =====================================================
+    local function veePressJump()
+        local ok = pcall(function()
+            VIM:SendKeyEvent(true, Enum.KeyCode.Space, false, false)
+            task.wait(0.03)
+            VIM:SendKeyEvent(false, Enum.KeyCode.Space, false, false)
+        end)
+        if ok then return true end
+        if type(keypress) == "function" and type(keyrelease) == "function" then
+            pcall(function()
+                keypress(Enum.KeyCode.Space)
+                task.wait(0.03)
+                keyrelease(Enum.KeyCode.Space)
+            end)
+            return true
+        end
+        local ok2 = pcall(function()
+            VIM:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
+            task.wait(0.03)
+            VIM:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
+        end)
+        return ok2
+    end
+
     local function veeDoTrickInput()
         local fired = false
         if V.WallTrickMode == "Button" or V.WallTrickMode == "Both" then
             fired = veeFireStamButton()
         end
-        local isPC = (not UIS.TouchEnabled) or UIS.MouseEnabled
-        if isPC and (V.WallTrickMode == "Key" or V.WallTrickMode == "Both" or not fired) then
-            local ok = pcall(function()
-                VIM:SendKeyEvent(true, Enum.KeyCode.Space, false, false)
-                task.wait(0.03)
-                VIM:SendKeyEvent(false, Enum.KeyCode.Space, false, false)
-            end)
-            if ok then return end
-            if type(keypress) == "function" and type(keyrelease) == "function" then
-                pcall(function()
-                    keypress(Enum.KeyCode.Space)
-                    task.wait(0.03)
-                    keyrelease(Enum.KeyCode.Space)
-                end)
-                return
-            end
-            pcall(function()
-                VIM:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
-                task.wait(0.03)
-                VIM:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
-            end)
-        else
-            local pg = lp:FindFirstChild("PlayerGui")
-            local m  = pg and pg:FindFirstChild("MainUI")
-            local b  = m and m:FindFirstChild("SprintingButton")
-            if b and getconnections then
-                for _, c in pairs(getconnections(b.MouseButton1Down)) do pcall(function() c:Fire() end) end
-                task.wait(0.05)
-                for _, c in pairs(getconnections(b.MouseButton1Up)) do pcall(function() c:Fire() end) end
-                for _, c in pairs(getconnections(b.Activated)) do pcall(function() c:Fire() end) end
-            end
+        if V.WallTrickMode == "Key" or V.WallTrickMode == "Both" or not fired then
+            pcall(veePressJump)
         end
     end
 
@@ -2242,12 +2450,10 @@ pcall(function()
                 end
 
                 if not hasWall then
-                    -- No wall → clear memory so the same wall can retrigger later
                     V.WallTrickLastWall = nil
                     continue
                 end
 
-                -- Same wall as last time? Skip until it changes
                 if wallInst and V.WallTrickLastWall == wallInst then
                     continue
                 end
@@ -2409,12 +2615,13 @@ pcall(function()
 
     local VeeTab = Window:AddTab("Veeronica", "sparkles")
     local TR = VeeTab:AddLeftGroupbox("Tricks")
-    TR:AddToggle("VAutoTrick", { Text="Auto Trick (Wall Proximity)", Default=false, Callback=function(v) V.AutoTrick=v; veeAutoTrickStart() end })
-    TR:AddSlider("VWallRadius", { Text="Wall Trick Radius (studs)", Min=1, Max=10, Default=5, Rounding=1,
+    TR:AddToggle("VAutoTrick", { Text="Auto Trick (Wall Box → Jump)", Default=false,
+        Callback=function(v) V.AutoTrick=v; veeAutoTrickStart() end })
+    TR:AddSlider("VWallRadius", { Text="Wall Box Radius (studs)", Min=1, Max=10, Default=5, Rounding=1,
         Callback=function(v) V.WallTrickRadius = v end })
     TR:AddSlider("VWallCD", { Text="Wall Trick Cooldown (s)", Min=0, Max=10, Default=0.15, Rounding=2,
         Callback=function(v) V.WallTrickCooldown = v end })
-    TR:AddDropdown("VWallMode", { Text="Input Method", Values={"Button","Key","Both"}, Default=1,
+    TR:AddDropdown("VWallMode", { Text="Input Method", Values={"Key","Button","Both"}, Default=1,
         Callback=function(v) V.WallTrickMode = v end })
     TR:AddToggle("VWallSkateOnly", { Text="Only While On Skate", Default=true,
         Callback=function(v) V.WallTrickRequireSkate = v end })
@@ -2457,26 +2664,53 @@ pcall(function()
     local Rage = VeeTab:AddLeftGroupbox("Rage (100% ban risk)")
     Rage:AddToggle("VEverywhere", { Text="Sk8 Everywhere", Default=false, Callback=function(v) V.Sk8Everywhere=v; veeSetEverywhere(v) end })
 
-    notify("Wind Hub v1", "Veeronica tab loaded")
+    notify("SCP Hub", "Veeronica tab loaded")
 end)
 
--- UI Settings
-pcall(function()
-    ThemeManager:SetLibrary(Library)
-    SaveManager:SetLibrary(Library)
-    SaveManager:IgnoreThemeSettings()
-    SaveManager:IgnoreIndexes({ "MenuKeybind" })
-    ThemeManager:SetFolder("WindHub")
-    SaveManager:SetFolder("WindHub")
-    SaveManager:BuildConfigSection(Tabs.UISet)
-    ThemeManager:ApplyToTab(Tabs.UISet)
+setProgress(95, "Finalizing UI settings...")
+
+-- =========================================================
+-- UI Settings (FIXED — theme + save manager)
+-- =========================================================
+do
+    local themeOK = pcall(function() ThemeManager:SetLibrary(Library) end)
+    local saveOK  = pcall(function() SaveManager:SetLibrary(Library) end)
+
+    if saveOK then
+        pcall(function() SaveManager:IgnoreThemeSettings() end)
+        pcall(function() SaveManager:IgnoreIndexes({ "MenuKeybind" }) end)
+        pcall(function() SaveManager:SetFolder("SCPHub") end)
+    end
+    if themeOK then
+        pcall(function() ThemeManager:SetFolder("SCPHub") end)
+    end
+
+    if saveOK then
+        pcall(function() SaveManager:BuildConfigSection(Tabs.UISet) end)
+    end
+    if themeOK then
+        pcall(function() ThemeManager:ApplyToTab(Tabs.UISet) end)
+    end
+
     local M = Tabs.UISet:AddLeftGroupbox("Menu")
-    pcall(function()
+    local kbOK = pcall(function()
         M:AddKeyPicker("MenuKeybind", { Default = "RightShift", NoUI = true, Text = "Menu keybind" })
     end)
-    M:AddButton({ Text = "Unload", Func = function() Library:Unload() end })
-    Library.ToggleKeybind = Options.MenuKeybind
-end)
+    M:AddButton({ Text = "Unload", Func = function()
+        pcall(function() Library:Unload() end)
+    end })
 
-pcall(function() SaveManager:LoadAutoloadConfig() end)
-notify("Wind Hub v1", "loaded")
+    if kbOK and Options and Options.MenuKeybind then
+        pcall(function() Library.ToggleKeybind = Options.MenuKeybind end)
+    end
+
+    if saveOK then
+        pcall(function() SaveManager:LoadAutoloadConfig() end)
+    end
+end
+
+-- =========================================================
+-- DONE — hide loading screen
+-- =========================================================
+notify("SCP Hub", "loaded")
+finishLoading()

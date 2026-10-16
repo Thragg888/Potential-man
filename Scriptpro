@@ -1,9 +1,9 @@
 -- Wind Hub v1 — assembled build with all fixes
 -- Fixes applied: non-blocking UI load · Auto Gen precise timing · Auto Block/ESP round-survival
 -- · FacingVisual box off+transparent by default · ESP fill/outline transparency sliders
--- · Auto Trick wall-proximity trigger + stam-button/skate input · Killers tab removed
--- · Killer ESP fixed (per-category tracking) · Auto Block now uses BOTH sound + killer-animation detection
--- · Veeronica tab with wall-trick (stam button click / keybind within 1-10 studs of a wall)
+-- · Auto Trick wall-proximity (nearest wall only, skips same wall, cooldown 0-10s)
+-- · Killers tab removed · Killer ESP fixed (per-category tracking)
+-- · Auto Block uses BOTH sound + killer-animation detection · Veeronica tab wall-trick
 
 repeat task.wait() until game:IsLoaded()
 
@@ -124,7 +124,6 @@ local firesignalF = (typeof(firesignal) == "function") and firesignal
 -- Block firing
 -- =========================================================
 local lastBlockFire = 0
--- CFG now includes AnimTrigger (Forsaken Plus method alongside sound trigger)
 local CFG = { AutoBlockEnabled = false, WallCheck = true, SoundTrigger = true, AnimTrigger = true }
 local BLOCK_METHOD = nil
 
@@ -234,7 +233,7 @@ task.spawn(function()
 end)
 
 -- =========================================================
--- Facing visual (Patch A: box OFF by default, transparent when on)
+-- Facing visual
 -- =========================================================
 local FacingVisual = {
     BoxEnabled    = false,
@@ -354,11 +353,6 @@ local function createBox(killer)
             hrp.Position + flat * (FacingVisual.BoxLength * 0.5 + 1))
         applyBoxAppearance(data, killer)
     end)
-end
-local function ensureVisualsFor(killer)
-    if not killer or not killer:IsA("Model") then return end
-    if FacingVisual.BoxEnabled then createBox(killer) else destroyBox(killer) end
-    if FacingVisual.CircleEnabled then createCircle(killer) else destroyCircle(killer) end
 end
 local function ensureBoxes()
     if not KillersFolder then return end
@@ -706,7 +700,7 @@ local function tryAutoBlock(killerModel, soundId)
 end
 
 -- =========================================================
--- TRIGGER SOUNDS  (sound-based attack detection for Auto Block)
+-- TRIGGER SOUNDS
 -- =========================================================
 local TRIGGER_SOUNDS = {
     ["102228729296384"]=true,["140242176732868"]=true,["112809109188560"]=true,["136323728355613"]=true,
@@ -1260,7 +1254,7 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- =========================================================
--- ESP (Patch B: transparency fields, Patch E: per-category tracking)
+-- ESP (per-category tracking)
 -- =========================================================
 local ESP_CFG = {
     Killers   = { Enabled = true, Box = true, Chams = true, Name = true, Distance = true, Tracer = false,
@@ -1518,7 +1512,7 @@ task.spawn(function()
 end)
 
 -- =========================================================
--- AUTO GENERATOR (precise timing)
+-- AUTO GENERATOR
 -- =========================================================
 local AUTOGEN = { Enabled = false, Interval = 1.05, MaxDistance = 10, _thread = nil }
 local function getIngameMap()
@@ -1962,7 +1956,8 @@ pcall(function()
 end)
 
 -- =========================================================
--- VEERONICA TAB  (Auto Trick with wall-proximity + stam button/keybind)
+-- VEERONICA TAB
+-- Wall trick: nearest-wall only · skips same wall · cooldown 0-10s
 -- =========================================================
 pcall(function()
     local V = {
@@ -1974,6 +1969,7 @@ pcall(function()
         WallTrickEnabled=false, WallTrickThread=nil, WallTrickRadius=5,
         WallTrickCooldown=0.15, WallTrickLast=0, WallTrickMode="Button",
         WallTrickRequireSkate=true, WallTrickUseHighlight=false,
+        WallTrickLastWall=nil,          -- tracks last wall instance so we don't re-click the same one
     }
     local VModule, VUtil
 
@@ -2064,11 +2060,12 @@ pcall(function()
     end
 
     -- =====================================================
-    -- Wall detection: 8 outward rays within radius; wall = mostly horizontal normal
+    -- Wall detection: 8 outward rays within radius.
+    -- Returns ONLY the NEAREST horizontal wall.
     -- =====================================================
     local function veeWallCheck()
         local myRoot = getMyRoot()
-        if not myRoot then return false end
+        if not myRoot then return false, nil end
         local R = math.clamp(V.WallTrickRadius or 5, 1, 10)
         local params = RaycastParams.new()
         params.FilterType = Enum.RaycastFilterType.Exclude
@@ -2078,29 +2075,45 @@ pcall(function()
         if pf then table.insert(exclude, pf) end
         params.FilterDescendantsInstances = exclude
         local origin = myRoot.Position
+
+        -- Ray sweep: keep only the NEAREST wall
+        local nearestInst, nearestDist = nil, math.huge
         for i = 0, 7 do
             local a = math.rad(i * 45)
             local dir = Vector3.new(math.cos(a), 0, math.sin(a)) * R
             local r = workspace:Raycast(origin, dir, params)
             if r and r.Instance and math.abs(r.Normal.Y) < 0.6 then
-                return true, r.Instance
+                local d = (r.Position - origin).Magnitude
+                if d < nearestDist then
+                    nearestDist = d
+                    nearestInst = r.Instance
+                end
             end
         end
-        -- Fallback: overlap for irregular meshes
-        local op = OverlapParams.new()
-        op.FilterType = Enum.RaycastFilterType.Exclude
-        op.FilterDescendantsInstances = exclude
-        local parts = workspace:GetPartBoundsInRadius(origin, R * 0.6, op)
-        for _, p in ipairs(parts) do
-            if p:IsA("BasePart") and p.CanCollide and p.Size.Y >= math.min(p.Size.X, p.Size.Z) then
-                return true, p
+
+        -- Fallback overlap (irregular meshes): still keep only nearest
+        if not nearestInst then
+            local op = OverlapParams.new()
+            op.FilterType = Enum.RaycastFilterType.Exclude
+            op.FilterDescendantsInstances = exclude
+            local parts = workspace:GetPartBoundsInRadius(origin, R * 0.6, op)
+            for _, p in ipairs(parts) do
+                if p:IsA("BasePart") and p.CanCollide and p.Size.Y >= math.min(p.Size.X, p.Size.Z) then
+                    local d = (p.Position - origin).Magnitude
+                    if d < nearestDist then
+                        nearestDist = d
+                        nearestInst = p
+                    end
+                end
             end
         end
-        return false
+
+        if nearestInst then return true, nearestInst end
+        return false, nil
     end
 
     -- =====================================================
-    -- Fire the stam/sprint UI button (Forsaken Plus style)
+    -- Fire the stam / sprint UI button (Forsaken Plus style).
     -- =====================================================
     local function veeFireStamButton()
         local pg = lp:FindFirstChild("PlayerGui"); if not pg then return false end
@@ -2160,7 +2173,7 @@ pcall(function()
     end
 
     -- =====================================================
-    -- Do the trick: stam button first, then Space
+    -- Do the trick input. Prefers stam button; also fires Space.
     -- =====================================================
     local function veeDoTrickInput()
         local fired = false
@@ -2189,7 +2202,6 @@ pcall(function()
                 VIM:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
             end)
         else
-            -- Mobile fallback
             local pg = lp:FindFirstChild("PlayerGui")
             local m  = pg and pg:FindFirstChild("MainUI")
             local b  = m and m:FindFirstChild("SprintingButton")
@@ -2216,17 +2228,33 @@ pcall(function()
             while V.AutoTrick do
                 RunService.Heartbeat:Wait()
                 if not V.AutoTrick then break end
+
                 local c = lp.Character
                 if not c or not veeIsVee() then continue end
                 if not veeIsSkating() then continue end
-                local trigger = false
+
+                local hasWall, wallInst
                 if V.WallTrickUseHighlight and veeHighlighted(c) then
-                    trigger = true
+                    hasWall = true
+                    wallInst = nil
                 else
-                    trigger = veeWallCheck()
+                    hasWall, wallInst = veeWallCheck()
                 end
-                if trigger and os.clock() - (V.WallTrickLast or 0) >= (V.WallTrickCooldown or 0.15) then
+
+                if not hasWall then
+                    -- No wall → clear memory so the same wall can retrigger later
+                    V.WallTrickLastWall = nil
+                    continue
+                end
+
+                -- Same wall as last time? Skip until it changes
+                if wallInst and V.WallTrickLastWall == wallInst then
+                    continue
+                end
+
+                if os.clock() - (V.WallTrickLast or 0) >= (V.WallTrickCooldown or 0.15) then
                     V.WallTrickLast = os.clock()
+                    V.WallTrickLastWall = wallInst
                     pcall(veeDoTrickInput)
                 end
             end
@@ -2384,7 +2412,7 @@ pcall(function()
     TR:AddToggle("VAutoTrick", { Text="Auto Trick (Wall Proximity)", Default=false, Callback=function(v) V.AutoTrick=v; veeAutoTrickStart() end })
     TR:AddSlider("VWallRadius", { Text="Wall Trick Radius (studs)", Min=1, Max=10, Default=5, Rounding=1,
         Callback=function(v) V.WallTrickRadius = v end })
-    TR:AddSlider("VWallCD", { Text="Wall Trick Cooldown (s)", Min=0.05, Max=1, Default=0.15, Rounding=2,
+    TR:AddSlider("VWallCD", { Text="Wall Trick Cooldown (s)", Min=0, Max=10, Default=0.15, Rounding=2,
         Callback=function(v) V.WallTrickCooldown = v end })
     TR:AddDropdown("VWallMode", { Text="Input Method", Values={"Button","Key","Both"}, Default=1,
         Callback=function(v) V.WallTrickMode = v end })
@@ -2398,12 +2426,15 @@ pcall(function()
             while v do
                 task.wait(0.5)
                 if V.AutoTrick and lp.Character then
-                    print(("[AutoTrick] name=%s isVee=%s skating=%s wallcheck=%s highlight=%s")
+                    local ok, hasWall, wallInst = pcall(veeWallCheck)
+                    print(("[AutoTrick] name=%s isVee=%s skating=%s wall=%s wallInst=%s lastWall=%s highlight=%s")
                         :format(
                             lp.Character:GetAttribute("CharacterName") or lp.Character.Name,
                             tostring(veeIsVee()),
                             tostring(veeIsSkating()),
-                            tostring(veeWallCheck()),
+                            tostring(hasWall),
+                            tostring(wallInst),
+                            tostring(V.WallTrickLastWall),
                             tostring(veeATDebug.result)))
                 end
             end

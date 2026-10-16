@@ -1,5 +1,6 @@
--- SCP Hub v8 — Self-contained GUI, no library dependency
--- Fixes: missing AIM/Veeronica definitions (v7 bug), self-contained UI
+-- SCP Hub v9 — no loading screen, straight to UI
+-- All features · Box size + count editable · Self-contained GUI
+
 repeat task.wait() until game:IsLoaded()
 
 -- =========================================================
@@ -13,7 +14,6 @@ local Stats             = game:GetService("Stats")
 local UIS               = game:GetService("UserInputService")
 local VIM               = game:GetService("VirtualInputManager")
 local TweenService      = game:GetService("TweenService")
-local ContentProvider   = game:GetService("ContentProvider")
 local CoreGui           = game:GetService("CoreGui")
 local Debris            = game:GetService("Debris")
 local Lighting          = game:GetService("Lighting")
@@ -28,19 +28,6 @@ if not PlayerGui then
 end
 
 local BG_IMAGE = "rbxassetid://9859971171"
-local BG_IMAGE_ALT = "rbxassetid://9859971166"
-
--- =========================================================
--- LOADING SCREEN
--- =========================================================
-local Loading = { StartTime=tick(), MinDisplayTime=2.5, Progress=0, Done=false,
-    GUI=nil, Bar=nil, Pct=nil, Status=nil }
-
-local function safeTween(inst, ti, props)
-    if not inst or not inst.Parent then return end
-    local ok, t = pcall(function() return TweenService:Create(inst, ti, props) end)
-    if ok and t then pcall(function() t:Play() end) end
-end
 
 local function makeGui(name)
     local sg = Instance.new("ScreenGui")
@@ -55,131 +42,6 @@ local function makeGui(name)
     end
     return sg
 end
-
-local function drawLock(parent, accent, dark)
-    local body = Instance.new("Frame")
-    body.AnchorPoint = Vector2.new(0.5, 0); body.Position = UDim2.fromScale(0.5, 0.45)
-    body.Size = UDim2.fromScale(0.72, 0.52); body.BackgroundColor3 = accent
-    body.BorderSizePixel = 0; body.ZIndex = 5; body.Parent = parent
-    local bc = Instance.new("UICorner"); bc.CornerRadius = UDim.new(0, 4); bc.Parent = body
-    local sh = Instance.new("Frame")
-    sh.AnchorPoint = Vector2.new(0.5, 1); sh.Position = UDim2.fromScale(0.5, 0.48)
-    sh.Size = UDim2.fromScale(0.48, 0.32); sh.BackgroundTransparency = 1
-    sh.ZIndex = 4; sh.Parent = parent
-    local st = Instance.new("Frame")
-    st.AnchorPoint = Vector2.new(0.5, 0); st.Position = UDim2.fromScale(0.5, 0)
-    st.Size = UDim2.fromScale(1, 0.28); st.BackgroundColor3 = accent
-    st.BorderSizePixel = 0; st.ZIndex = 4; st.Parent = sh
-    local stc = Instance.new("UICorner"); stc.CornerRadius = UDim.new(1,0); stc.Parent = st
-    local sl = Instance.new("Frame"); sl.Position = UDim2.fromScale(0, 0)
-    sl.Size = UDim2.fromScale(0.22, 1); sl.BackgroundColor3 = accent
-    sl.BorderSizePixel = 0; sl.ZIndex = 4; sl.Parent = sh
-    local sr = Instance.new("Frame")
-    sr.AnchorPoint = Vector2.new(1, 0); sr.Position = UDim2.fromScale(1, 0)
-    sr.Size = UDim2.fromScale(0.22, 1); sr.BackgroundColor3 = accent
-    sr.BorderSizePixel = 0; sr.ZIndex = 4; sr.Parent = sh
-    local kh = Instance.new("Frame")
-    kh.AnchorPoint = Vector2.new(0.5, 0.5); kh.Position = UDim2.fromScale(0.5, 0.35)
-    kh.Size = UDim2.fromScale(0.22, 0.22); kh.BackgroundColor3 = dark
-    kh.BorderSizePixel = 0; kh.ZIndex = 6; kh.Parent = body
-    local khc = Instance.new("UICorner"); khc.CornerRadius = UDim.new(1,0); khc.Parent = kh
-    local ks = Instance.new("Frame")
-    ks.AnchorPoint = Vector2.new(0.5, 0); ks.Position = UDim2.fromScale(0.5, 0.44)
-    ks.Size = UDim2.fromScale(0.06, 0.32); ks.BackgroundColor3 = dark
-    ks.BorderSizePixel = 0; ks.ZIndex = 6; ks.Parent = body
-end
-
-local function createLoadingScreen()
-    pcall(function()
-        local gui = makeGui("SCPHubLoading")
-        gui.DisplayOrder = 2147483647
-        local bg = Instance.new("Frame")
-        bg.Size = UDim2.fromScale(1,1); bg.BackgroundColor3 = Color3.fromRGB(8,8,10)
-        bg.BorderSizePixel = 0; bg.ZIndex = 1; bg.Parent = gui
-        local bgImg = Instance.new("ImageLabel")
-        bgImg.Size = UDim2.fromScale(1,1); bgImg.BackgroundTransparency = 1
-        bgImg.Image = BG_IMAGE; bgImg.ImageTransparency = 0.85
-        bgImg.ScaleType = Enum.ScaleType.Crop; bgImg.ZIndex = 2; bgImg.Parent = gui
-        task.spawn(function()
-            local okp = pcall(function() ContentProvider:PreloadAsync({bgImg}) end)
-            local hasSize = false
-            pcall(function() hasSize = bgImg.ImageRectSize.X > 0 and bgImg.ImageRectSize.Y > 0 end)
-            if not okp or not hasSize then pcall(function() bgImg.Image = BG_IMAGE_ALT end) end
-        end)
-        local topBar = Instance.new("Frame")
-        topBar.AnchorPoint = Vector2.new(0.5, 0); topBar.Position = UDim2.fromScale(0.5, 0.04)
-        topBar.Size = UDim2.fromScale(0.28, 0.06)
-        topBar.BackgroundTransparency = 1; topBar.ZIndex = 5; topBar.Parent = gui
-        local lockBox = Instance.new("Frame")
-        lockBox.AnchorPoint = Vector2.new(1, 0.5); lockBox.Position = UDim2.fromScale(0.5, 0.5)
-        lockBox.Size = UDim2.fromScale(0.22, 0.9); lockBox.BackgroundTransparency = 1
-        lockBox.ZIndex = 5; lockBox.Parent = topBar
-        local la = Instance.new("UIAspectRatioConstraint"); la.AspectRatio = 1; la.Parent = lockBox
-        drawLock(lockBox, Color3.fromRGB(220,40,40), Color3.fromRGB(15,15,18))
-        local title = Instance.new("TextLabel")
-        title.AnchorPoint = Vector2.new(0, 0.5); title.Position = UDim2.fromScale(0.54, 0.5)
-        title.Size = UDim2.fromScale(0.45, 0.9); title.BackgroundTransparency = 1
-        title.Font = Enum.Font.GothamBold; title.Text = "SCP HUB"
-        title.TextColor3 = Color3.fromRGB(220,40,40); title.TextScaled = true
-        title.TextXAlignment = Enum.TextXAlignment.Left
-        title.TextStrokeTransparency = 0.4; title.TextStrokeColor3 = Color3.new(0,0,0)
-        title.ZIndex = 5; title.Parent = topBar
-        local barBG = Instance.new("Frame")
-        barBG.AnchorPoint = Vector2.new(0.5, 0.5); barBG.Position = UDim2.fromScale(0.5, 0.91)
-        barBG.Size = UDim2.fromScale(0.26, 0.009)
-        barBG.BackgroundColor3 = Color3.fromRGB(30,30,34)
-        barBG.BorderSizePixel = 0; barBG.ZIndex = 5; barBG.Parent = gui
-        local bc = Instance.new("UICorner"); bc.CornerRadius = UDim.new(0,4); bc.Parent = barBG
-        local bar = Instance.new("Frame")
-        bar.Size = UDim2.fromScale(0,1); bar.BackgroundColor3 = Color3.fromRGB(200,30,30)
-        bar.BorderSizePixel = 0; bar.ZIndex = 6; bar.Parent = barBG
-        local fc = Instance.new("UICorner"); fc.CornerRadius = UDim.new(0,4); fc.Parent = bar
-        local pct = Instance.new("TextLabel")
-        pct.AnchorPoint = Vector2.new(0.5, 0); pct.Position = UDim2.fromScale(0.5, 0.925)
-        pct.Size = UDim2.fromScale(0.26, 0.02); pct.BackgroundTransparency = 1
-        pct.Font = Enum.Font.Gotham; pct.Text = "0%"
-        pct.TextColor3 = Color3.fromRGB(200,200,200); pct.TextScaled = true
-        pct.ZIndex = 5; pct.Parent = gui
-        local status = Instance.new("TextLabel")
-        status.AnchorPoint = Vector2.new(0.5, 0); status.Position = UDim2.fromScale(0.5, 0.948)
-        status.Size = UDim2.fromScale(0.45, 0.018); status.BackgroundTransparency = 1
-        status.Font = Enum.Font.Gotham; status.Text = "Booting..."
-        status.TextColor3 = Color3.fromRGB(140,140,140); status.TextScaled = true
-        status.ZIndex = 5; status.Parent = gui
-        Loading.GUI = gui; Loading.Bar = bar; Loading.Pct = pct; Loading.Status = status
-    end)
-end
-createLoadingScreen()
-
-local function setProgress(pct, status)
-    Loading.Progress = math.clamp(tonumber(pct) or Loading.Progress, 0, 100)
-    if Loading.GUI and Loading.GUI.Parent then
-        if Loading.Bar then safeTween(Loading.Bar, TweenInfo.new(0.25), { Size = UDim2.fromScale(Loading.Progress/100, 1) }) end
-        if Loading.Pct then pcall(function() Loading.Pct.Text = math.floor(Loading.Progress).."%" end) end
-        if Loading.Status and status then pcall(function() Loading.Status.Text = tostring(status) end) end
-    end
-end
-local function finishLoading()
-    if Loading.Done then return end
-    setProgress(100, "Ready!")
-    local el = tick() - Loading.StartTime
-    if el < Loading.MinDisplayTime then task.wait(Loading.MinDisplayTime - el) end
-    Loading.Done = true
-    local gui = Loading.GUI; Loading.GUI = nil
-    if not gui or not gui.Parent then return end
-    pcall(function()
-        local ti = TweenInfo.new(0.5)
-        for _, d in ipairs(gui:GetDescendants()) do
-            if d:IsA("Frame") then safeTween(d, ti, { BackgroundTransparency = 1 })
-            elseif d:IsA("TextLabel") or d:IsA("TextButton") then
-                safeTween(d, ti, { TextTransparency = 1, TextStrokeTransparency = 1, BackgroundTransparency = 1 })
-            elseif d:IsA("ImageLabel") then safeTween(d, ti, { ImageTransparency = 1 }) end
-        end
-        task.wait(0.6); if gui and gui.Parent then gui:Destroy() end
-    end)
-end
-
-setProgress(15, "Init...")
 
 -- =========================================================
 -- Game bootstrap
@@ -651,8 +513,6 @@ task.spawn(function()
     end
 end)
 
-setProgress(35, "ESP...")
-
 -- =========================================================
 -- ESP
 -- =========================================================
@@ -931,10 +791,8 @@ HDT_Trigger = function(force)
     startDrag(target)
 end
 
-setProgress(50, "Aim...")
-
 -- =========================================================
--- AIM (Survivor Stun) — v7 BUG FIX: this was missing entirely
+-- AIM
 -- =========================================================
 local Camera = Workspace.CurrentCamera
 Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
@@ -1276,8 +1134,6 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
-setProgress(65, "Veeronica...")
-
 -- =========================================================
 -- Veeronica
 -- =========================================================
@@ -1495,8 +1351,6 @@ local function veeAutoPhase(v)
     end)
 end
 
-setProgress(75, "Building UI...")
-
 -- =========================================================
 -- SELF-CONTAINED UI
 -- =========================================================
@@ -1533,7 +1387,6 @@ local function buildUI()
     UI.Screen = makeGui("SCPHubUI")
     UI.Screen.DisplayOrder = 1000
 
-    -- Main panel
     local p = newFrame(UI.Screen, COL.bg, UDim2.fromOffset(520, 400),
         UDim2.new(0.5, -260, 0.5, -200), 10, 90)
     local ps = Instance.new("UIStroke"); ps.Color = COL.outline; ps.Thickness = 1; ps.Parent = p
@@ -1546,37 +1399,20 @@ local function buildUI()
     pImg.ScaleType = Enum.ScaleType.Crop; pImg.ZIndex = 0
     pImg.Parent = p
 
-    -- Header
     local h = newFrame(p, COL.panel, UDim2.new(1,0,0,36), UDim2.new(0,0,0,0), 10, 95)
-    local hc = h:FindFirstChildOfClass("UICorner")
-    -- Fill bottom of header corners
     local hf = newFrame(h, COL.panel, UDim2.new(1,0,0,18), UDim2.new(0,0,1,-18), 0, 95)
-    newText(h, "🔒 SCP HUB", 14, true, COL.text, UDim2.new(0,12,0,0), UDim2.new(1,-70,1,0))
-    local function newTextLbl(p, txt, sz, bold, col, pos, size)
-        local l = Instance.new("TextLabel")
-        l.BackgroundTransparency = 1
-        l.Font = bold and Enum.Font.GothamBold or Enum.Font.Gotham
-        l.TextSize = sz; l.TextColor3 = col
-        l.TextXAlignment = Enum.TextXAlignment.Left
-        l.Text = txt; l.Position = pos; l.Size = size
-        l.ZIndex = 96; l.Parent = p
-        return l
-    end
-    -- (override because newText was used above but not defined — define now)
-    function newText(parent, text, size, bold, color, pos, sz)
-        local l = Instance.new("TextLabel")
-        l.BackgroundTransparency = 1
-        l.Font = bold and Enum.Font.GothamBold or Enum.Font.Gotham
-        l.TextSize = size or 12
-        l.TextColor3 = color or COL.text
-        l.TextXAlignment = Enum.TextXAlignment.Left
-        l.Text = text or ""
-        if pos then l.Position = pos end
-        l.Size = sz or UDim2.new(1,-70,1,0)
-        l.ZIndex = 96
-        l.Parent = parent
-        return l
-    end
+
+    local htitle = Instance.new("TextLabel")
+    htitle.BackgroundTransparency = 1
+    htitle.Font = Enum.Font.GothamBold
+    htitle.TextSize = 14
+    htitle.TextColor3 = COL.text
+    htitle.TextXAlignment = Enum.TextXAlignment.Left
+    htitle.Text = "🔒 SCP HUB"
+    htitle.Position = UDim2.new(0, 12, 0, 0)
+    htitle.Size = UDim2.new(1, -70, 1, 0)
+    htitle.ZIndex = 96
+    htitle.Parent = h
 
     local close = Instance.new("TextButton")
     close.AnchorPoint = Vector2.new(1, 0.5)
@@ -1595,7 +1431,6 @@ local function buildUI()
         p.Visible = false
     end)
 
-    -- Sidebar tabs
     local sb = newFrame(p, COL.sidebar, UDim2.new(0, 128, 1, -36), UDim2.new(0,0,0,36), 0, 92)
     UI.Sidebar = sb
     local sll = Instance.new("UIListLayout")
@@ -1606,11 +1441,9 @@ local function buildUI()
     sbp.PaddingTop = UDim.new(0, 6); sbp.PaddingLeft = UDim.new(0, 6); sbp.PaddingRight = UDim.new(0, 6)
     sbp.Parent = sb
 
-    -- Content area
     local ct = newFrame(p, COL.bg, UDim2.new(1, -128, 1, -36), UDim2.new(0, 128, 0, 36), 0, 92)
     UI.Content = ct
 
-    -- drag
     local dragging, dragStart, panelStart
     h.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1
@@ -2083,7 +1916,6 @@ _G.SCPHubInput = UIS.InputBegan:Connect(function(input, gpe)
     end
 end)
 
-setProgress(95, "Ready!")
 task.wait(0.2)
 pcall(function()
     StarterGui:SetCore("SendNotification", {
@@ -2092,4 +1924,3 @@ pcall(function()
         Duration = 4,
     })
 end)
-finishLoading()

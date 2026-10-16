@@ -1,5 +1,5 @@
--- SCP Hub v9 — no loading screen, straight to UI
--- All features · Box size + count editable · Self-contained GUI
+-- SCP Hub v10 — Fluent-Renewed UI · 滑块步进 = 1
+-- All features · No loading screen · Box size + count editable
 
 repeat task.wait() until game:IsLoaded()
 
@@ -29,19 +29,22 @@ end
 
 local BG_IMAGE = "rbxassetid://9859971171"
 
-local function makeGui(name)
-    local sg = Instance.new("ScreenGui")
-    sg.Name = name; sg.ResetOnSpawn = false
-    sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    sg.IgnoreGuiInset = true
-    local parented = false
-    pcall(function() if gethui then sg.Parent = gethui(); parented = sg.Parent ~= nil end end)
-    if not parented then
-        local ok = pcall(function() sg.Parent = CoreGui end)
-        if not ok or not sg.Parent then sg.Parent = PlayerGui end
-    end
-    return sg
+-- =========================================================
+-- Fluent-Renewed
+-- =========================================================
+local Fluent = loadstring(game:HttpGet(
+    "https://github.com/ActualMasterOogway/Fluent-Renewed/releases/latest/download/Fluent.luau"
+))()
+if not Fluent then
+    warn("[SCP Hub] Fluent-Renewed failed to load")
+    return
 end
+local SaveManager = loadstring(game:HttpGet(
+    "https://raw.githubusercontent.com/ActualMasterOogway/Fluent-Renewed/main/Addons/SaveManager.luau"
+))()
+local InterfaceManager = loadstring(game:HttpGet(
+    "https://raw.githubusercontent.com/ActualMasterOogway/Fluent-Renewed/main/Addons/InterfaceManager.luau"
+))()
 
 -- =========================================================
 -- Game bootstrap
@@ -93,7 +96,9 @@ end
 local firesignalF = (typeof(firesignal) == "function") and firesignal
     or rawget(getfenv(), "FireSignal") or rawget(getfenv(), "firesignal")
 
+-- =========================================================
 -- Attack map
+-- =========================================================
 local BLOCKABLE_ATTACKS = { ["slash"]=true,["enragedslash"]=true,["stab"]=true,
     ["attack"]=true,["punch"]=true,["swing"]=true,["golemslash"]=true }
 local CUSTOM_HITBOXES = { ["golemslash"]={Size=Vector3.new(6,2,7),Offset=CFrame.new(0,0,-5.5)} }
@@ -129,7 +134,7 @@ task.spawn(buildAttackAnimMap)
 task.spawn(function() while true do task.wait(30); pcall(buildAttackAnimMap) end end)
 
 -- =========================================================
--- Block
+-- Block firing
 -- =========================================================
 local lastBlockFire = 0
 local BLOCK_METHOD = nil
@@ -609,7 +614,7 @@ end)
 -- =========================================================
 -- Auto Gen
 -- =========================================================
-local AUTOGEN = { Enabled=false, Interval=1.05, MaxDistance=10, _thread=nil }
+local AUTOGEN = { Enabled=false, Interval=1, MaxDistance=10, _thread=nil }
 local function getIngameMap()
     local map = Workspace:FindFirstChild("Map")
     map = map and map:FindFirstChild("Ingame")
@@ -799,8 +804,8 @@ Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
     if Workspace.CurrentCamera then Camera = Workspace.CurrentCamera end
 end)
 
-local AIM = { Enabled=false, AimMode="Camera", Smooth=1.0, PredictMode="Both",
-    PredictLead=0.15, PingMult=1.0, CurrentAbility=nil, CachedTargetHRP=nil, _aimUntil=0 }
+local AIM = { Enabled=false, AimMode="Camera", Smooth=1, PredictMode="Both",
+    PredictLead=0.15, PingMult=1, CurrentAbility=nil, CachedTargetHRP=nil, _aimUntil=0 }
 local PING_ABILITIES = { AimGun=true, GunFire=true, GunExplode=true, GunFail=true }
 local function getPing()
     local ok, v = pcall(function() return lp:GetNetworkPing() end)
@@ -845,7 +850,7 @@ local function predictHRP(hrp)
     return hrp.Position + vel * math.clamp(velLead + pingLead, 0, 0.75)
 end
 local function AimFor(duration, abilityName)
-    AIM._aimUntil = tick() + (duration or 1.0)
+    AIM._aimUntil = tick() + (duration or 1)
     AIM.CurrentAbility = abilityName
 end
 local autoRotSaved = nil
@@ -878,15 +883,15 @@ local function ballisticAim(targetPos, projSpeed, gravity)
     return origin + Vector3.new(delta.X, 0, delta.Z).Unit * horiz + Vector3.new(0, horiz * math.tan(angle), 0)
 end
 local STUN_ABILITY_KEYS = { Punch=true, Slash=true, OneShot=true, AimGun=true, GunFire=true, CrystalPitch=true, Hatchet=true }
-local ABILITY_LOCKS = { Punch=2.00, Slash=0.80, OneShot=1.20, AimGun=0.60, GunFire=1.20, CrystalPitch=1.40, Hatchet=0.95 }
-local DEFAULT_LOCK = 0.85
+local ABILITY_LOCKS = { Punch=2, Slash=1, OneShot=1, AimGun=1, GunFire=1, CrystalPitch=1, Hatchet=1 }
+local DEFAULT_LOCK = 1
 local ABILITY_AIM_PART = { Punch="Head", Slash="Head", OneShot="Head", AimGun="Head", GunFire="Head", CrystalPitch="Head", Hatchet="Head" }
 local BALLISTIC = { CrystalPitch = true }
 local TRIGGER_WINDOW = 0.18
 local STUN_ANIMS = {}
 local STUN_BY_ABILITY = {}
 local GUEST_PUNCH_ANIMS = { ["126830014841198"]="Punch", ["126355327951215"]="Punch", ["121086746534252"]="Punch" }
-local AbilityHook = { Enabled=true, Cooldown=1.0, LockMultiplier=1.0, _lastFire=0, _animConn=nil, _registered=0, _lastName="", _lastSkin="" }
+local AbilityHook = { Enabled=true, Cooldown=1, LockMultiplier=1, _lastFire=0, _animConn=nil, _registered=0, _lastName="", _lastSkin="" }
 local function registerGuestPunchAnims()
     local lock = ABILITY_LOCKS.Punch or DEFAULT_LOCK
     local aimPart = ABILITY_AIM_PART.Punch or "Head"
@@ -962,9 +967,9 @@ local function bindAnimWatch()
         if not info then return end
         if track.TimePosition > TRIGGER_WINDOW then return end
         local now = tick()
-        if now - (AbilityHook._lastFire or 0) < (AbilityHook.Cooldown or 1.0) then return end
+        if now - (AbilityHook._lastFire or 0) < (AbilityHook.Cooldown or 1) then return end
         AbilityHook._lastFire = now
-        AimFor(info.Lock * (AbilityHook.LockMultiplier or 1.0), info.Ability)
+        AimFor(info.Lock * (AbilityHook.LockMultiplier or 1), info.Ability)
     end)
 end
 lp.CharacterAdded:Connect(function() task.wait(0.4); loadCharacterAnims(); bindAnimWatch() end)
@@ -1008,7 +1013,7 @@ RunService:BindToRenderStep("SCPHubAim", Enum.RenderPriority.Camera.Value + 1, f
             if ov.Ballistic then targetPos = ballisticAim(targetPos, 80, workspace.Gravity) end
         end
     end
-    local smooth = AIM.Smooth or 1.0
+    local smooth = AIM.Smooth or 1
     local alpha = (smooth >= 0.999) and 1 or (1 - math.exp(-dt * math.clamp(smooth * 30, 2, 60)))
     local mode = AIM.AimMode
     if mode == "Camera" or mode == "HRP+Camera" then
@@ -1031,8 +1036,8 @@ end)
 -- Chance Aimlock
 -- =========================================================
 local ChanceAimbot = {
-    Enabled=false, LockTime=0.9, PredMin=2, PredMax=3,
-    TurnLeadMult=1.0, FireRemote=true,
+    Enabled=false, LockTime=1, PredMin=2, PredMax=3,
+    TurnLeadMult=1, FireRemote=true,
     _isLocking=false, _lockUntil=0, _currentTarget=nil,
     _lastTrigger=0, _hooked={}, _velHistory={},
 }
@@ -1093,7 +1098,7 @@ local function chancePredictPosition(root)
         local ah = Vector3.new(a.X, 0, a.Z)
         local bh = Vector3.new(b.X, 0, b.Z)
         if ah.Magnitude > 2 and bh.Magnitude > 2 and ah.Unit:Dot(bh.Unit) < 0.45 then
-            lead = lead + 0.9 * (ChanceAimbot.TurnLeadMult or 1.0)
+            lead = lead + 0.9 * (ChanceAimbot.TurnLeadMult or 1)
         end
     end
     return pos + horiz.Unit * lead
@@ -1142,7 +1147,7 @@ local V = {
     SkateControl=false, AntiRebound=false,
     UnlimitedSk8=false, AutoFarmSk8=false, AutoFarmSk8Started=false, CustomStats=false,
     Sk8Everywhere=false, AutoPhase=false, AutoPhaseThread=nil,
-    Sk8Speed=1.15, Sk8TrickSpeed=1.42, Sk8BumpPower=11.9, Sk8TrickStamina=10, Sk8TrickCooldown=1,
+    Sk8Speed=1, Sk8TrickSpeed=1, Sk8BumpPower=12, Sk8TrickStamina=10, Sk8TrickCooldown=1,
     WallTrickRadius=5, WallTrickCooldown=0.15, WallTrickLast=0, WallTrickMode="Key",
     WallTrickRequireSkate=true, WallTrickLastWall=nil,
 }
@@ -1169,10 +1174,10 @@ local function veeApplyStats()
     veeSetStat("Sk8TrickCooldown", V.Sk8TrickCooldown)
 end
 local function veeResetStats()
-    veeSetStat("Sk8Speed", 1.15); veeSetStat("Sk8SpeedExhaust", 1.15)
-    veeSetStat("Sk8TrickAirborneSpeed", 1.42)
-    veeSetStat("Sk8BumpPower", 11.9); veeSetStat("Sk8BumpChargedPower", 15)
-    veeSetStat("Sk8TrickStamina", 10); veeSetStat("Sk8TrickStaminaNerfed", 4)
+    veeSetStat("Sk8Speed", 1); veeSetStat("Sk8SpeedExhaust", 1)
+    veeSetStat("Sk8TrickAirborneSpeed", 1)
+    veeSetStat("Sk8BumpPower", 12); veeSetStat("Sk8BumpChargedPower", 12)
+    veeSetStat("Sk8TrickStamina", 10); veeSetStat("Sk8TrickStaminaNerfed", 10)
     veeSetStat("Sk8TrickCooldown", 1)
 end
 local function veeIsVee()
@@ -1352,560 +1357,231 @@ local function veeAutoPhase(v)
 end
 
 -- =========================================================
--- SELF-CONTAINED UI
+-- BUILD FLUENT UI  (所有 Rounding = 1)
 -- =========================================================
-local UI = { Screen=nil, Tabs={}, ActiveTab=nil, Open=true, Order=0 }
+local Window = Fluent:CreateWindow({
+    Title = "SCP Hub",
+    SubTitle = "v10",
+    TabWidth = 140,
+    Size = UDim2.fromOffset(560, 420),
+    Acrylic = true,
+    Theme = "Dark",
+    MinimizeKey = Enum.KeyCode.RightShift,
+})
 
-local COL = {
-    bg        = Color3.fromRGB(14, 14, 16),
-    panel     = Color3.fromRGB(20, 20, 22),
-    sidebar   = Color3.fromRGB(16, 16, 18),
-    row       = Color3.fromRGB(26, 26, 28),
-    accent    = Color3.fromRGB(200, 40, 40),
-    accentDim = Color3.fromRGB(90, 22, 22),
-    text      = Color3.fromRGB(230, 230, 230),
-    textDim   = Color3.fromRGB(150, 150, 150),
-    outline   = Color3.fromRGB(45, 45, 48),
-    trackOff  = Color3.fromRGB(50, 50, 54),
+local Tabs = {
+    ESP       = Window:AddTab({ Title = "ESP", Icon = "eye" }),
+    AutoBlock = Window:AddTab({ Title = "Auto Block", Icon = "shield" }),
+    Box       = Window:AddTab({ Title = "Box", Icon = "box" }),
+    Gen       = Window:AddTab({ Title = "Gen", Icon = "settings" }),
+    Stamina   = Window:AddTab({ Title = "Stamina", Icon = "zap" }),
+    HDT       = Window:AddTab({ Title = "HDT", Icon = "mouse-pointer" }),
+    Aim       = Window:AddTab({ Title = "Aim", Icon = "crosshair" }),
+    Veeronica = Window:AddTab({ Title = "Veeronica", Icon = "sparkles" }),
+    Misc      = Window:AddTab({ Title = "Misc", Icon = "cog" }),
+    UI        = Window:AddTab({ Title = "UI Settings", Icon = "settings" }),
 }
 
-local function newFrame(parent, bg, size, pos, corner, z)
-    local f = Instance.new("Frame")
-    f.BackgroundColor3 = bg or COL.row
-    f.BorderSizePixel = 0
-    f.Size = size or UDim2.new()
-    if pos then f.Position = pos end
-    f.ZIndex = z or 1
-    f.Parent = parent
-    if corner then
-        local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, corner); c.Parent = f
-    end
-    return f
+-- ESP Tab
+do
+    local g = Tabs.ESP:AddLeftGroupbox("Killer ESP")
+    g:AddToggle("KillerESP", { Title = "Enabled", Default = true, Callback = function(v) ESP_CFG.Killers.Enabled = v end })
+    g:AddToggle("KillerBox", { Title = "Box", Default = true, Callback = function(v) ESP_CFG.Killers.Box = v end })
+    g:AddToggle("KillerChams", { Title = "Chams", Default = true, Callback = function(v) ESP_CFG.Killers.Chams = v end })
+    g:AddToggle("KillerName", { Title = "Name", Default = true, Callback = function(v) ESP_CFG.Killers.Name = v end })
+    g:AddToggle("KillerDist", { Title = "Distance", Default = true, Callback = function(v) ESP_CFG.Killers.Distance = v end })
+
+    local gr = Tabs.ESP:AddRightGroupbox("Survivor ESP")
+    gr:AddToggle("SurvESP", { Title = "Enabled", Default = true, Callback = function(v) ESP_CFG.Survivors.Enabled = v end })
+    gr:AddToggle("SurvBox", { Title = "Box", Default = true, Callback = function(v) ESP_CFG.Survivors.Box = v end })
+    gr:AddToggle("SurvChams", { Title = "Chams", Default = true, Callback = function(v) ESP_CFG.Survivors.Chams = v end })
+    gr:AddToggle("SurvName", { Title = "Name", Default = true, Callback = function(v) ESP_CFG.Survivors.Name = v end })
+    gr:AddToggle("SurvDist", { Title = "Distance", Default = true, Callback = function(v) ESP_CFG.Survivors.Distance = v end })
+
+    local gw = Tabs.ESP:AddLeftGroupbox("World")
+    gw:AddToggle("GenESP", { Title = "Generators", Default = false, Callback = function(v) ESP_CFG.Generators.Enabled = v end })
+    gw:AddToggle("ItemESP", { Title = "Items", Default = false, Callback = function(v) ESP_CFG.Items.Enabled = v end })
+    gw:AddButton({ Title = "Clear All ESP", Callback = function()
+        for m in pairs(ESP_TRACK) do espClear(m) end
+        Fluent:Notify({ Title = "SCP Hub", Content = "ESP cleared", Duration = 3 })
+    end })
 end
 
-local function buildUI()
-    UI.Screen = makeGui("SCPHubUI")
-    UI.Screen.DisplayOrder = 1000
+-- Auto Block Tab
+do
+    local g = Tabs.AutoBlock:AddLeftGroupbox("Auto Block")
+    g:AddToggle("AB", { Title = "Enable Auto Block", Default = false, Callback = function(v) AB_Cfg.Enabled = v end })
+    g:AddToggle("ABSnd", { Title = "Sound Trigger", Default = true, Callback = function(v) AB_Cfg.SoundTrigger = v end })
+    g:AddToggle("ABAnim", { Title = "Animation Trigger", Default = true, Callback = function(v) AB_Cfg.AnimTrigger = v end })
+    g:AddToggle("ABWall", { Title = "Wall Check", Default = true, Callback = function(v) AB_Cfg.WallCheck = v end })
+    g:AddButton({ Title = "Block Now", Callback = function() task.spawn(fireBlock) end })
 
-    local p = newFrame(UI.Screen, COL.bg, UDim2.fromOffset(520, 400),
-        UDim2.new(0.5, -260, 0.5, -200), 10, 90)
-    local ps = Instance.new("UIStroke"); ps.Color = COL.outline; ps.Thickness = 1; ps.Parent = p
-    p.ClipsDescendants = true
-    UI.Panel = p
-
-    local pImg = Instance.new("ImageLabel")
-    pImg.Size = UDim2.fromScale(1,1); pImg.BackgroundTransparency = 1
-    pImg.Image = BG_IMAGE; pImg.ImageTransparency = 0.92
-    pImg.ScaleType = Enum.ScaleType.Crop; pImg.ZIndex = 0
-    pImg.Parent = p
-
-    local h = newFrame(p, COL.panel, UDim2.new(1,0,0,36), UDim2.new(0,0,0,0), 10, 95)
-    local hf = newFrame(h, COL.panel, UDim2.new(1,0,0,18), UDim2.new(0,0,1,-18), 0, 95)
-
-    local htitle = Instance.new("TextLabel")
-    htitle.BackgroundTransparency = 1
-    htitle.Font = Enum.Font.GothamBold
-    htitle.TextSize = 14
-    htitle.TextColor3 = COL.text
-    htitle.TextXAlignment = Enum.TextXAlignment.Left
-    htitle.Text = "🔒 SCP HUB"
-    htitle.Position = UDim2.new(0, 12, 0, 0)
-    htitle.Size = UDim2.new(1, -70, 1, 0)
-    htitle.ZIndex = 96
-    htitle.Parent = h
-
-    local close = Instance.new("TextButton")
-    close.AnchorPoint = Vector2.new(1, 0.5)
-    close.Position = UDim2.new(1, -8, 0.5, 0)
-    close.Size = UDim2.fromOffset(24, 24)
-    close.BackgroundColor3 = COL.trackOff
-    close.BorderSizePixel = 0
-    close.Font = Enum.Font.GothamBold
-    close.TextSize = 13
-    close.TextColor3 = COL.text
-    close.Text = "✕"
-    close.ZIndex = 96
-    close.Parent = h
-    local cc = Instance.new("UICorner"); cc.CornerRadius = UDim.new(1,0); cc.Parent = close
-    close.MouseButton1Click:Connect(function()
-        p.Visible = false
-    end)
-
-    local sb = newFrame(p, COL.sidebar, UDim2.new(0, 128, 1, -36), UDim2.new(0,0,0,36), 0, 92)
-    UI.Sidebar = sb
-    local sll = Instance.new("UIListLayout")
-    sll.SortOrder = Enum.SortOrder.LayoutOrder
-    sll.Padding = UDim.new(0, 3)
-    sll.Parent = sb
-    local sbp = Instance.new("UIPadding")
-    sbp.PaddingTop = UDim.new(0, 6); sbp.PaddingLeft = UDim.new(0, 6); sbp.PaddingRight = UDim.new(0, 6)
-    sbp.Parent = sb
-
-    local ct = newFrame(p, COL.bg, UDim2.new(1, -128, 1, -36), UDim2.new(0, 128, 0, 36), 0, 92)
-    UI.Content = ct
-
-    local dragging, dragStart, panelStart
-    h.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-           or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            dragStart = input.Position
-            panelStart = p.Position
+    local gb = Tabs.AutoBlock:AddRightGroupbox("Behead")
+    gb:AddToggle("ABIgnore", { Title = "Ignore Behead Sounds", Default = true, Callback = function(v) IGNORE_BEHEAD = v end })
+    gb:AddToggle("ABLog", { Title = "Log IDs", Default = false, Callback = function(v) end })
+    gb:AddButton({ Title = "Mark Last as Behead", Callback = function()
+        if _G.SCPHub_LastLoggedID then
+            BEHEAD_IDS[_G.SCPHub_LastLoggedID] = true
+            Fluent:Notify({ Title = "SCP Hub", Content = "Behead: " .. _G.SCPHub_LastLoggedID, Duration = 3 })
         end
-    end)
-    UIS.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
-           or input.UserInputType == Enum.UserInputType.Touch) then
-            local d = input.Position - dragStart
-            p.Position = UDim2.new(panelStart.X.Scale, panelStart.X.Offset + d.X,
-                                   panelStart.Y.Scale, panelStart.Y.Offset + d.Y)
-        end
-    end)
-    UIS.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-           or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = false
-        end
-    end)
-
-    UI.Frame = p
+    end })
 end
 
-local function nextOrder(tab)
-    tab.Order = tab.Order + 1
-    return tab.Order
+-- Box Tab (全部 Rounding = 1)
+do
+    local g = Tabs.Box:AddLeftGroupbox("Box Settings")
+    g:AddToggle("BoxOn", { Title = "Show Box", Default = false, Callback = function(v)
+        BoxCfg.Enabled = v
+        if not v then for k in pairs(BoxCfg.Long) do destroyLongBox(k) end
+        else task.spawn(ensureBoxes) end
+    end })
+    g:AddDropdown("BoxMode", { Title = "Appear Mode", Values = { "M1", "Always" }, Default = "M1",
+        Callback = function(v)
+            BoxCfg.AppearMode = v
+            if v == "Always" then task.spawn(ensureBoxes)
+            else for k in pairs(BoxCfg.Long) do destroyLongBox(k) end end
+        end })
+
+    local gb = Tabs.Box:AddRightGroupbox("M1 Boxes (FP-style)")
+    gb:AddSlider("MaxBoxes", { Title = "Boxes per M1", Min = 1, Max = 10, Default = 1, Rounding = 1,
+        Callback = function(v) BoxCfg.M1Boxes = v end })
+    gb:AddSlider("M1Spread", { Title = "Spread", Min = 0, Max = 20, Default = 3, Rounding = 1,
+        Callback = function(v) BoxCfg.M1Spread = v end })
+
+    local gb2 = Tabs.Box:AddLeftGroupbox("Always Box (SCP-Hub-style)")
+    gb2:AddSlider("BoxWidth", { Title = "Width", Min = 1, Max = 60, Default = 12, Rounding = 1,
+        Callback = function(v) BoxCfg.Width = v end })
+    gb2:AddSlider("BoxLength", { Title = "Length", Min = 1, Max = 120, Default = 30, Rounding = 1,
+        Callback = function(v) BoxCfg.Length = v end })
+    gb2:AddSlider("BoxHeight", { Title = "Height", Min = 1, Max = 30, Default = 8, Rounding = 1,
+        Callback = function(v) BoxCfg.Height = v end })
+    gb2:AddSlider("BoxTrans", { Title = "Transparency", Min = 0, Max = 1, Default = 1, Rounding = 1,
+        Callback = function(v) BoxCfg.Transparency = v end })
+    gb2:AddColorPicker("BoxColor", { Title = "Color", Default = Color3.fromRGB(255,60,60),
+        Callback = function(c) BoxCfg.Color = c end })
 end
 
-local function addSection(tab, text)
-    local l = Instance.new("TextLabel")
-    l.BackgroundTransparency = 1
-    l.Font = Enum.Font.GothamBold
-    l.TextSize = 12
-    l.TextColor3 = COL.accent
-    l.TextXAlignment = Enum.TextXAlignment.Left
-    l.Text = text
-    l.Size = UDim2.new(1, 0, 0, 22)
-    l.LayoutOrder = nextOrder(tab)
-    l.Parent = tab.Scroll
-    return l
-end
-local function addRow(tab, title, height)
-    local row = newFrame(tab.Scroll, COL.row, UDim2.new(1, 0, 0, height or 42), nil, 6, 1)
-    row.LayoutOrder = nextOrder(tab)
-    local t = Instance.new("TextLabel")
-    t.BackgroundTransparency = 1
-    t.Font = Enum.Font.GothamBold
-    t.TextSize = 12
-    t.TextColor3 = COL.text
-    t.TextXAlignment = Enum.TextXAlignment.Left
-    t.Text = title
-    t.Position = UDim2.new(0, 10, 0, 6)
-    t.Size = UDim2.new(1, -110, 0, 18)
-    t.ZIndex = 2
-    t.Parent = row
-    return row
-end
-local function addToggle(tab, title, default, callback)
-    local row = addRow(tab, title, 38)
-    local state = default and true or false
-    local track = Instance.new("TextButton")
-    track.AnchorPoint = Vector2.new(1, 0.5)
-    track.Position = UDim2.new(1, -10, 0.5, 0)
-    track.Size = UDim2.fromOffset(38, 20)
-    track.BackgroundColor3 = state and COL.accent or COL.trackOff
-    track.BorderSizePixel = 0
-    track.Text = ""
-    track.AutoButtonColor = false
-    track.ZIndex = 3
-    track.Parent = row
-    local tc = Instance.new("UICorner"); tc.CornerRadius = UDim.new(1,0); tc.Parent = track
-    local knob = Instance.new("Frame")
-    knob.Size = UDim2.fromOffset(14, 14)
-    knob.Position = state and UDim2.new(1, -16, 0.5, -7) or UDim2.new(0, 2, 0.5, -7)
-    knob.BackgroundColor3 = Color3.new(1,1,1)
-    knob.BorderSizePixel = 0
-    knob.ZIndex = 4
-    knob.Parent = track
-    local kc = Instance.new("UICorner"); kc.CornerRadius = UDim.new(1,0); kc.Parent = knob
-    track.MouseButton1Click:Connect(function()
-        state = not state
-        track.BackgroundColor3 = state and COL.accent or COL.trackOff
-        TweenService:Create(knob, TweenInfo.new(0.12), {
-            Position = state and UDim2.new(1, -16, 0.5, -7) or UDim2.new(0, 2, 0.5, -7)
-        }):Play()
-        if callback then pcall(callback, state) end
-    end)
-end
-local function addSlider(tab, title, min, max, default, callback)
-    local row = addRow(tab, title, 42)
-    local vl = Instance.new("TextLabel")
-    vl.BackgroundTransparency = 1
-    vl.Font = Enum.Font.Gotham
-    vl.TextSize = 11
-    vl.TextColor3 = COL.textDim
-    vl.TextXAlignment = Enum.TextXAlignment.Right
-    vl.Text = tostring(default)
-    vl.Position = UDim2.new(1, -56, 0, 6)
-    vl.Size = UDim2.fromOffset(46, 16)
-    vl.ZIndex = 2
-    vl.Parent = row
-
-    local track = Instance.new("TextButton")
-    track.Position = UDim2.new(0, 10, 0, 26)
-    track.Size = UDim2.new(1, -20, 0, 6)
-    track.BackgroundColor3 = COL.trackOff
-    track.BorderSizePixel = 0
-    track.Text = ""
-    track.AutoButtonColor = false
-    track.ZIndex = 3
-    track.Parent = row
-    local tc = Instance.new("UICorner"); tc.CornerRadius = UDim.new(1,0); tc.Parent = track
-    local fill = Instance.new("Frame")
-    fill.Size = UDim2.new((default - min) / math.max(max - min, 0.001), 0, 1, 0)
-    fill.BackgroundColor3 = COL.accent
-    fill.BorderSizePixel = 0
-    fill.ZIndex = 4
-    fill.Parent = track
-    local fc = Instance.new("UICorner"); fc.CornerRadius = UDim.new(1,0); fc.Parent = fill
-
-    local dragging = false
-    track.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-           or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-        end
-    end)
-    UIS.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
-           or input.UserInputType == Enum.UserInputType.Touch) then
-            local pct = math.clamp((input.Position.X - track.AbsolutePosition.X) / math.max(track.AbsoluteSize.X, 1), 0, 1)
-            local cur = min + (max - min) * pct
-            cur = math.floor(cur * 100 + 0.5) / 100
-            fill.Size = UDim2.new(pct, 0, 1, 0)
-            vl.Text = tostring(cur)
-            if callback then pcall(callback, cur) end
-        end
-    end)
-    UIS.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-           or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = false
-        end
-    end)
-end
-local function addDropdown(tab, title, options, default, callback)
-    local row = addRow(tab, title, 38)
-    local idx = 1
-    for i, v in ipairs(options) do if v == default then idx = i end end
-    local btn = Instance.new("TextButton")
-    btn.AnchorPoint = Vector2.new(1, 0.5)
-    btn.Position = UDim2.new(1, -10, 0.5, 0)
-    btn.Size = UDim2.fromOffset(110, 24)
-    btn.BackgroundColor3 = COL.trackOff
-    btn.BorderSizePixel = 0
-    btn.Font = Enum.Font.Gotham
-    btn.TextSize = 12
-    btn.TextColor3 = COL.text
-    btn.Text = options[idx] or "?"
-    btn.AutoButtonColor = false
-    btn.ZIndex = 3
-    btn.Parent = row
-    local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 6); c.Parent = btn
-    btn.MouseButton1Click:Connect(function()
-        idx = idx % #options + 1
-        btn.Text = options[idx]
-        if callback then pcall(callback, options[idx]) end
-    end)
-end
-local function addButton(tab, title, callback)
-    local row = addRow(tab, title, 38)
-    local b = Instance.new("TextButton")
-    b.AnchorPoint = Vector2.new(1, 0.5)
-    b.Position = UDim2.new(1, -10, 0.5, 0)
-    b.Size = UDim2.fromOffset(70, 24)
-    b.BackgroundColor3 = COL.accent
-    b.BorderSizePixel = 0
-    b.Font = Enum.Font.GothamBold
-    b.TextSize = 12
-    b.TextColor3 = Color3.new(1,1,1)
-    b.Text = "Run"
-    b.AutoButtonColor = false
-    b.ZIndex = 3
-    b.Parent = row
-    local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 6); c.Parent = b
-    b.MouseButton1Click:Connect(function() if callback then pcall(callback) end end)
-end
-local function addKeybind(tab, title, default, callback)
-    local row = addRow(tab, title, 38)
-    local b = Instance.new("TextButton")
-    b.AnchorPoint = Vector2.new(1, 0.5)
-    b.Position = UDim2.new(1, -10, 0.5, 0)
-    b.Size = UDim2.fromOffset(90, 24)
-    b.BackgroundColor3 = COL.trackOff
-    b.BorderSizePixel = 0
-    b.Font = Enum.Font.Gotham
-    b.TextSize = 12
-    b.TextColor3 = COL.text
-    b.Text = default or "None"
-    b.AutoButtonColor = false
-    b.ZIndex = 3
-    b.Parent = row
-    local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 6); c.Parent = b
-    local listening = false
-    b.MouseButton1Click:Connect(function()
-        listening = true
-        b.Text = "..."
-    end)
-    UIS.InputBegan:Connect(function(input, gpe)
-        if listening and not gpe and input.KeyCode ~= Enum.KeyCode.Unknown then
-            listening = false
-            b.Text = input.KeyCode.Name
-            if callback then pcall(callback, input.KeyCode.Name) end
-        end
-    end)
-end
-local function addColorPicker(tab, title, default, callback)
-    local row = addRow(tab, title, 56)
-    local pal = {
-        Color3.fromRGB(255, 60, 60), Color3.fromRGB(40, 255, 90), Color3.fromRGB(80, 200, 255),
-        Color3.fromRGB(255, 220, 40), Color3.fromRGB(80, 220, 220), Color3.fromRGB(160, 80, 255),
-        Color3.fromRGB(255, 130, 200), Color3.fromRGB(255, 150, 40), Color3.fromRGB(255, 255, 255),
-    }
-    local cont = newFrame(row, COL.bg, UDim2.new(1, -20, 0, 24), UDim2.new(0, 10, 0, 26), 4, 3)
-    local cl = Instance.new("UIListLayout")
-    cl.FillDirection = Enum.FillDirection.Horizontal
-    cl.Padding = UDim.new(0, 6)
-    cl.SortOrder = Enum.SortOrder.LayoutOrder
-    cl.Parent = cont
-    for i, col in ipairs(pal) do
-        local sw = Instance.new("TextButton")
-        sw.Size = UDim2.fromOffset(18, 18)
-        sw.BackgroundColor3 = col
-        sw.BorderSizePixel = 0
-        sw.Text = ""
-        sw.LayoutOrder = i
-        sw.AutoButtonColor = false
-        sw.ZIndex = 4
-        sw.Parent = cont
-        local cc = Instance.new("UICorner"); cc.CornerRadius = UDim.new(1,0); cc.Parent = sw
-        sw.MouseButton1Click:Connect(function() if callback then pcall(callback, col) end end)
-    end
+-- Gen Tab
+do
+    local g = Tabs.Gen:AddLeftGroupbox("Auto Generator")
+    g:AddToggle("GenOn", { Title = "Enable Auto Gen", Default = false, Callback = function(v)
+        AUTOGEN.Enabled = v; autogenLoop()
+    end })
+    g:AddSlider("GenRange", { Title = "Range", Min = 5, Max = 30, Default = 10, Rounding = 1,
+        Callback = function(v) AUTOGEN.MaxDistance = v end })
+    g:AddSlider("GenInt", { Title = "Interval", Min = 1, Max = 5, Default = 1, Rounding = 1,
+        Callback = function(v) AUTOGEN.Interval = v end })
 end
 
-function UI:AddTab(name)
-    if not self.Content then return nil end
-    local tabBtn = Instance.new("TextButton")
-    tabBtn.Size = UDim2.new(1, 0, 0, 28)
-    tabBtn.BackgroundColor3 = COL.bg
-    tabBtn.BorderSizePixel = 0
-    tabBtn.AutoButtonColor = false
-    tabBtn.Font = Enum.Font.GothamMedium
-    tabBtn.TextSize = 12
-    tabBtn.TextColor3 = COL.textDim
-    tabBtn.Text = name
-    tabBtn.TextXAlignment = Enum.TextXAlignment.Left
-    tabBtn.LayoutOrder = #self.Tabs + 1
-    tabBtn.ZIndex = 93
-    tabBtn.Parent = self.Sidebar
-    local tc = Instance.new("UICorner"); tc.CornerRadius = UDim.new(0,6); tc.Parent = tabBtn
-    local tp = Instance.new("UIPadding"); tp.PaddingLeft = UDim.new(0, 10); tp.Parent = tabBtn
-
-    local content = newFrame(self.Content, COL.bg, UDim2.fromScale(1,1), nil, 0, 92)
-    content.Visible = false
-    local scroll = Instance.new("ScrollingFrame")
-    scroll.Size = UDim2.fromScale(1,1)
-    scroll.BackgroundTransparency = 1
-    scroll.BorderSizePixel = 0
-    scroll.ScrollBarThickness = 4
-    scroll.ScrollBarImageColor3 = COL.accent
-    scroll.CanvasSize = UDim2.new(0,0,0,0)
-    scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-    scroll.ZIndex = 92
-    scroll.Parent = content
-    local pad = Instance.new("UIPadding")
-    pad.PaddingTop = UDim.new(0,8); pad.PaddingBottom = UDim.new(0,8)
-    pad.PaddingLeft = UDim.new(0,8); pad.PaddingRight = UDim.new(0,8)
-    pad.Parent = scroll
-    local ll = Instance.new("UIListLayout")
-    ll.SortOrder = Enum.SortOrder.LayoutOrder
-    ll.Padding = UDim.new(0, 6)
-    ll.Parent = scroll
-
-    local tab = { Name = name, Button = tabBtn, Frame = content, Scroll = scroll, Order = 0 }
-
-    tabBtn.MouseButton1Click:Connect(function()
-        for _, t in pairs(self.Tabs) do
-            t.Frame.Visible = false
-            t.Button.BackgroundColor3 = COL.bg
-            t.Button.TextColor3 = COL.textDim
-        end
-        tab.Frame.Visible = true
-        tabBtn.BackgroundColor3 = COL.accentDim
-        tabBtn.TextColor3 = COL.text
-        self.ActiveTab = tab
-    end)
-
-    self.Tabs[name] = tab
-    if not self.ActiveTab then
-        tab.Frame.Visible = true
-        tabBtn.BackgroundColor3 = COL.accentDim
-        tabBtn.TextColor3 = COL.text
-        self.ActiveTab = tab
-    end
-    return tab
+-- Stamina Tab
+do
+    local g = Tabs.Stamina:AddLeftGroupbox("Sprint")
+    g:AddDropdown("StamMode", { Title = "Preset", Values = { "Regular", "Semi", "Infinite" }, Default = "Regular",
+        Callback = function(v) stamSetMode(v) end })
 end
 
-buildUI()
+-- HDT Tab
+do
+    local g = Tabs.HDT:AddLeftGroupbox("HDT")
+    g:AddToggle("HDTOn", { Title = "Enabled", Default = false, Callback = function(v) HDT.Enabled = v end })
+    g:AddToggle("HDTAuto", { Title = "Auto on Block", Default = true, Callback = function(v) HDT.AutoTrigger = v end })
+    g:AddSlider("HDTSpd", { Title = "Speed", Min = 2, Max = 40, Default = 12, Rounding = 1,
+        Callback = function(v) HDT.Speed = v end })
+    g:AddSlider("HDTStop", { Title = "Stop Distance", Min = 1, Max = 10, Default = 2, Rounding = 1,
+        Callback = function(v) HDT.StopDistance = v end })
+    g:AddButton({ Title = "Trigger Now (Q)", Callback = function()
+        task.spawn(function() pcall(function() HDT_Trigger(true) end) end)
+    end })
+end
 
--- toggle keybind
-UIS.InputBegan:Connect(function(input, gpe)
-    if gpe then return end
-    if input.KeyCode == Enum.KeyCode.RightShift then
-        if UI.Frame then UI.Frame.Visible = not UI.Frame.Visible end
-    end
-end)
+-- Aim Tab
+do
+    local g = Tabs.Aim:AddLeftGroupbox("Survivor Stun Aim")
+    g:AddToggle("AimOn", { Title = "Enabled", Default = false, Callback = function(v) AIM.Enabled = v end })
+    g:AddToggle("AimStun", { Title = "Aim on Stun", Default = true, Callback = function(v) AbilityHook.Enabled = v end })
+    g:AddDropdown("AimMode", { Title = "Aim Mode", Values = {"Camera","HRP","HRP+Camera"}, Default = "Camera",
+        Callback = function(v) AIM.AimMode = v end })
+    g:AddDropdown("AimPred", { Title = "Prediction", Values = {"Off","Ping","Velocity","Both"}, Default = "Both",
+        Callback = function(v) AIM.PredictMode = v end })
+    g:AddSlider("AimSmooth", { Title = "Smooth", Min = 1, Max = 1, Default = 1, Rounding = 1,
+        Callback = function(v) AIM.Smooth = v end })
 
--- =========================================================
--- MENU CONTENT
--- =========================================================
-local TabESP = UI:AddTab("ESP")
-local TabAB  = UI:AddTab("Auto Block")
-local TabBox = UI:AddTab("Box")
-local TabGen = UI:AddTab("Auto Gen")
-local TabStm = UI:AddTab("Stamina")
-local TabHDT = UI:AddTab("HDT")
-local TabAim = UI:AddTab("Aim")
-local TabVee = UI:AddTab("Veeronica")
-local TabMs  = UI:AddTab("Misc")
+    local gr = Tabs.Aim:AddRightGroupbox("Chance Aimlock")
+    gr:AddToggle("ChanceAim", { Title = "Enable", Default = false, Callback = function(v)
+        ChanceAimbot.Enabled = v
+        if v then chanceScanButtons() else ChanceAimbot._isLocking = false; ChanceAimbot._hooked = {} end
+    end })
+    gr:AddKeyPicker("ChanceKey", { Title = "Keybind", Default = "V", Mode = "Press", NoUI = false,
+        Callback = function()
+            if ChanceAimbot.Enabled then chanceStartAimlock() end
+        end })
+end
 
--- ESP
-addSection(TabESP, "KILLER")
-addToggle(TabESP, "Killer ESP", true, function(v) ESP_CFG.Killers.Enabled = v end)
-addToggle(TabESP, "Killer Box", true, function(v) ESP_CFG.Killers.Box = v end)
-addToggle(TabESP, "Killer Chams", true, function(v) ESP_CFG.Killers.Chams = v end)
-addToggle(TabESP, "Killer Name", true, function(v) ESP_CFG.Killers.Name = v end)
-addToggle(TabESP, "Killer Distance", true, function(v) ESP_CFG.Killers.Distance = v end)
-addSection(TabESP, "SURVIVOR")
-addToggle(TabESP, "Survivor ESP", true, function(v) ESP_CFG.Survivors.Enabled = v end)
-addToggle(TabESP, "Survivor Box", true, function(v) ESP_CFG.Survivors.Box = v end)
-addToggle(TabESP, "Survivor Chams", true, function(v) ESP_CFG.Survivors.Chams = v end)
-addToggle(TabESP, "Survivor Name", true, function(v) ESP_CFG.Survivors.Name = v end)
-addToggle(TabESP, "Survivor Distance", true, function(v) ESP_CFG.Survivors.Distance = v end)
-addSection(TabESP, "WORLD")
-addToggle(TabESP, "Generator ESP", false, function(v) ESP_CFG.Generators.Enabled = v end)
-addToggle(TabESP, "Item ESP", false, function(v) ESP_CFG.Items.Enabled = v end)
-addButton(TabESP, "Clear All ESP", function()
-    for m in pairs(ESP_TRACK) do espClear(m) end
-end)
+-- Veeronica Tab
+do
+    local g = Tabs.Veeronica:AddLeftGroupbox("Tricks")
+    g:AddToggle("VAutoTrick", { Title = "Auto Trick (Wall Box)", Default = false, Callback = function(v) V.AutoTrick = v; veeAutoTrickStart() end })
+    g:AddSlider("VWallRadius", { Title = "Wall Radius", Min = 1, Max = 10, Default = 5, Rounding = 1,
+        Callback = function(v) V.WallTrickRadius = v end })
+    g:AddDropdown("VWallMode", { Title = "Input Method", Values = {"Key","Button","Both"}, Default = "Key",
+        Callback = function(v) V.WallTrickMode = v end })
+    g:AddToggle("VSkateCtrl", { Title = "Skate Control", Default = false, Callback = function(v) V.SkateControl = v; veeSkateCtrl(v) end })
+    g:AddToggle("VARebound", { Title = "Anti Rebound", Default = false, Callback = function(v) V.AntiRebound = v; if v then veeInstallAR() end end })
+    g:AddToggle("VUSk8", { Title = "Unlimited Sk8", Default = false, Callback = function(v) V.UnlimitedSk8 = v; if v then veeInstallUSk8() end end })
+    g:AddToggle("VFarmSk8", { Title = "Auto Farm sk8", Default = false, Callback = function(v) V.AutoFarmSk8 = v; if v then veeFarmStart() end end })
+    g:AddToggle("VAutoPhase", { Title = "Auto Phase", Default = false, Callback = function(v) V.AutoPhase = v; veeAutoPhase(v) end })
 
--- Auto Block
-addSection(TabAB, "AUTO BLOCK")
-addToggle(TabAB, "Enable Auto Block", false, function(v) AB_Cfg.Enabled = v end)
-addToggle(TabAB, "Sound Trigger", true, function(v) AB_Cfg.SoundTrigger = v end)
-addToggle(TabAB, "Animation Trigger", true, function(v) AB_Cfg.AnimTrigger = v end)
-addToggle(TabAB, "Wall Check", true, function(v) AB_Cfg.WallCheck = v end)
-addButton(TabAB, "Block Now", function() task.spawn(fireBlock) end)
-addSection(TabAB, "BEHEAD")
-addToggle(TabAB, "Ignore Behead Sounds", true, function(v) IGNORE_BEHEAD = v end)
-addButton(TabAB, "Mark Last as Behead", function()
-    if _G.SCPHub_LastLoggedID then
-        BEHEAD_IDS[_G.SCPHub_LastLoggedID] = true
-    end
-end)
+    local gr = Tabs.Veeronica:AddRightGroupbox("Custom Stats")
+    gr:AddToggle("VCStats", { Title = "Enable", Default = false, Callback = function(v) V.CustomStats = v; if v then veeApplyStats() else veeResetStats() end end })
+    gr:AddSlider("VSk8Spd", { Title = "Skate Speed", Min = 1, Max = 10, Default = 1, Rounding = 1,
+        Callback = function(v) V.Sk8Speed = v; if V.CustomStats then veeSetStat("Sk8Speed", v) end end })
+    gr:AddSlider("VTrkBoost", { Title = "Trick Boost", Min = 1, Max = 15, Default = 1, Rounding = 1,
+        Callback = function(v) V.Sk8TrickSpeed = v; if V.CustomStats then veeSetStat("Sk8TrickAirborneSpeed", v) end end })
+    gr:AddSlider("VBump", { Title = "Bump Power", Min = 10, Max = 150, Default = 12, Rounding = 1,
+        Callback = function(v) V.Sk8BumpPower = v; if V.CustomStats then veeSetStat("Sk8BumpPower", v) end end })
+end
 
--- Box
-addSection(TabBox, "SETTINGS")
-addToggle(TabBox, "Show Box", false, function(v)
-    BoxCfg.Enabled = v
-    if not v then for k in pairs(BoxCfg.Long) do destroyLongBox(k) end
-    else task.spawn(ensureBoxes) end
-end)
-addDropdown(TabBox, "Appear Mode", {"M1", "Always"}, "M1", function(v)
-    BoxCfg.AppearMode = v
-    if v == "Always" then task.spawn(ensureBoxes)
-    else for k in pairs(BoxCfg.Long) do destroyLongBox(k) end end
-end)
-addSection(TabBox, "M1 BOXES (FP-style)")
-addSlider(TabBox, "Boxes per M1", 1, 10, 1, function(v) BoxCfg.M1Boxes = v end)
-addSlider(TabBox, "Spread", 0, 20, 3, function(v) BoxCfg.M1Spread = v end)
-addSection(TabBox, "ALWAYS BOX")
-addSlider(TabBox, "Width", 1, 60, 12, function(v) BoxCfg.Width = v end)
-addSlider(TabBox, "Length", 1, 120, 30, function(v) BoxCfg.Length = v end)
-addSlider(TabBox, "Height", 1, 30, 8, function(v) BoxCfg.Height = v end)
-addSlider(TabBox, "Transparency", 0, 1, 0.9, function(v) BoxCfg.Transparency = v end)
-addColorPicker(TabBox, "Color", Color3.fromRGB(255,60,60), function(c) BoxCfg.Color = c end)
+-- Misc Tab
+do
+    local g = Tabs.Misc:AddLeftGroupbox("Utility")
+    g:AddButton({ Title = "Fullbright", Callback = function()
+        pcall(function()
+            Lighting.Ambient = Color3.new(1,1,1)
+            Lighting.OutdoorAmbient = Color3.new(1,1,1)
+            Lighting.Brightness = 2
+            Lighting.ClockTime = 12
+        end)
+    end })
+    g:AddButton({ Title = "Show Chat", Callback = function()
+        pcall(function()
+            local c = TextChatService:FindFirstChildOfClass("ChatWindowConfiguration")
+            local i = TextChatService:FindFirstChildOfClass("ChatInputBarConfiguration")
+            if c then c.Enabled = true end
+            if i then i.Enabled = true end
+        end)
+    end })
+    g:AddButton({ Title = "Reset Character", Callback = function()
+        local h = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
+        if h then h.Health = 0 end
+    end })
+end
 
--- Auto Gen
-addSection(TabGen, "AUTO GENERATOR")
-addToggle(TabGen, "Enable Auto Gen", false, function(v) AUTOGEN.Enabled = v; autogenLoop() end)
-addSlider(TabGen, "Range", 5, 30, 10, function(v) AUTOGEN.MaxDistance = v end)
-addSlider(TabGen, "Interval", 0.5, 5, 1.05, function(v) AUTOGEN.Interval = v end)
+-- UI Settings Tab
+do
+    local g = Tabs.UI:AddLeftGroupbox("Menu")
+    g:AddKeyPicker("MenuKey", { Title = "Menu Key", Default = "RightShift", Mode = "Toggle", NoUI = true })
+    g:AddButton({ Title = "Unload", Callback = function() Fluent:Destroy() end })
+end
 
--- Stamina
-addSection(TabStm, "SPRINT")
-addDropdown(TabStm, "Preset", {"Regular", "Semi", "Infinite"}, "Regular", function(v) stamSetMode(v) end)
-
--- HDT
-addSection(TabHDT, "HDT")
-addToggle(TabHDT, "Enabled", false, function(v) HDT.Enabled = v end)
-addToggle(TabHDT, "Auto on Block", true, function(v) HDT.AutoTrigger = v end)
-addSlider(TabHDT, "Speed", 2, 40, 12, function(v) HDT.Speed = v end)
-addSlider(TabHDT, "Stop Distance", 0.5, 10, 2, function(v) HDT.StopDistance = v end)
-addButton(TabHDT, "Trigger Now (Q)", function()
-    task.spawn(function() pcall(function() HDT_Trigger(true) end) end)
-end)
-
--- Aim
-addSection(TabAim, "SURVIVOR STUN AIM")
-addToggle(TabAim, "Enabled", false, function(v) AIM.Enabled = v end)
-addToggle(TabAim, "Aim on Stun", true, function(v) AbilityHook.Enabled = v end)
-addDropdown(TabAim, "Aim Mode", {"Camera","HRP","HRP+Camera"}, "Camera", function(v) AIM.AimMode = v end)
-addDropdown(TabAim, "Prediction", {"Off","Ping","Velocity","Both"}, "Both", function(v) AIM.PredictMode = v end)
-addSlider(TabAim, "Smooth", 0.05, 1, 1.0, function(v) AIM.Smooth = v end)
-addSection(TabAim, "CHANCE AIMLOCK")
-addToggle(TabAim, "Chance Aimlock", false, function(v) ChanceAimbot.Enabled = v end)
-addKeybind(TabAim, "Aimlock Key", "V", function(k)
-    if ChanceAimbot.Enabled and k == "V" then chanceStartAimlock() end
-end)
-
--- Veeronica
-addSection(TabVee, "TRICKS")
-addToggle(TabVee, "Auto Trick (Wall Box)", false, function(v) V.AutoTrick = v; veeAutoTrickStart() end)
-addSlider(TabVee, "Wall Radius", 1, 10, 5, function(v) V.WallTrickRadius = v end)
-addDropdown(TabVee, "Input Method", {"Key","Button","Both"}, "Key", function(v) V.WallTrickMode = v end)
-addToggle(TabVee, "Skate Control", false, function(v) V.SkateControl = v; veeSkateCtrl(v) end)
-addToggle(TabVee, "Anti Rebound", false, function(v) V.AntiRebound = v; if v then veeInstallAR() end end)
-addToggle(TabVee, "Unlimited Sk8", false, function(v) V.UnlimitedSk8 = v; if v then veeInstallUSk8() end end)
-addToggle(TabVee, "Auto Farm sk8", false, function(v) V.AutoFarmSk8 = v; if v then veeFarmStart() end end)
-addToggle(TabVee, "Auto Phase", false, function(v) V.AutoPhase = v; veeAutoPhase(v) end)
-addSection(TabVee, "CUSTOM STATS")
-addToggle(TabVee, "Enable Custom Stats", false, function(v) V.CustomStats = v; if v then veeApplyStats() else veeResetStats() end end)
-addSlider(TabVee, "Skate Speed", 1, 10, 1.15, function(v) V.Sk8Speed = v; if V.CustomStats then veeSetStat("Sk8Speed", v) end end)
-addSlider(TabVee, "Trick Boost", 1, 15, 1.42, function(v) V.Sk8TrickSpeed = v; if V.CustomStats then veeSetStat("Sk8TrickAirborneSpeed", v) end end)
-addSlider(TabVee, "Bump Power", 10, 150, 11.9, function(v) V.Sk8BumpPower = v; if V.CustomStats then veeSetStat("Sk8BumpPower", v) end end)
-
--- Misc
-addSection(TabMs, "UTILITY")
-addButton(TabMs, "Fullbright", function()
-    pcall(function()
-        Lighting.Ambient = Color3.new(1,1,1)
-        Lighting.OutdoorAmbient = Color3.new(1,1,1)
-        Lighting.Brightness = 2
-        Lighting.ClockTime = 12
-    end)
-end)
-addButton(TabMs, "Show Chat", function()
-    pcall(function()
-        local c = TextChatService:FindFirstChildOfClass("ChatWindowConfiguration")
-        local i = TextChatService:FindFirstChildOfClass("ChatInputBarConfiguration")
-        if c then c.Enabled = true end
-        if i then i.Enabled = true end
-    end)
-end)
-addButton(TabMs, "Reset Character", function()
-    local h = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
-    if h then h.Health = 0 end
-end)
+-- Save manager
+SaveManager:SetLibrary(Fluent)
+InterfaceManager:SetLibrary(Fluent)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({ "MenuKey" })
+SaveManager:SetFolder("SCPHub")
+SaveManager:BuildConfigSection(Tabs.UI)
+InterfaceManager:ApplyToTab(Tabs.UI)
+SaveManager:LoadAutoloadConfig()
 
 -- HDT keybind
 if _G.SCPHubInput then pcall(function() _G.SCPHubInput:Disconnect() end) end
@@ -1920,7 +1596,7 @@ task.wait(0.2)
 pcall(function()
     StarterGui:SetCore("SendNotification", {
         Title = "SCP Hub",
-        Text = "Loaded · RightShift to toggle panel",
-        Duration = 4,
+        Text = "Loaded · RightShift to toggle",
+        Duration = 3,
     })
 end)

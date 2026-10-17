@@ -1,4 +1,4 @@
--- SCP Hub v1.89 — No Blacklist, Instant Name-Match Block, All Tabs Restored
+-- SCP Hub v1.94 — Final Polish (Fixed Auto Gen Kick, Box Walk, Aimlock, Auto Block)
 repeat task.wait() until game:IsLoaded()
 
 local Players           = game:GetService("Players")
@@ -15,9 +15,14 @@ local VIM               = game:GetService("VirtualInputManager")
 
 local lp = Players.LocalPlayer
 local PlayerGui = lp:FindFirstChildOfClass("PlayerGui") or lp:WaitForChild("PlayerGui", 15)
-if not PlayerGui then repeat task.wait() until lp:FindFirstChildOfClass("PlayerGui"); PlayerGui = lp:FindFirstChildOfClass("PlayerGui") end
+if not PlayerGui then 
+    repeat task.wait() until lp:FindFirstChildOfClass("PlayerGui")
+    PlayerGui = lp:FindFirstChildOfClass("PlayerGui")
+end
 
-pcall(function() if _G.SCPHubInput then _G.SCPHubInput:Disconnect(); _G.SCPHubInput = nil end end)
+pcall(function() 
+    if _G.SCPHubInput then _G.SCPHubInput:Disconnect() _G.SCPHubInput = nil end 
+end)
 pcall(RunService.UnbindFromRenderStep, RunService, "SCPHubAim")
 
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/gen2"))()
@@ -44,7 +49,12 @@ local function invalidateCharCache() cachedChar, cachedRoot, cachedHb = nil, nil
 lp.CharacterAdded:Connect(invalidateCharCache)
 lp.CharacterRemoving:Connect(invalidateCharCache)
 
-local function getMyRole() local c = lp.Character; local p = c and c.Parent; if p and (p.Name == "Survivors" or p.Name == "Killers") then return p.Name end return nil end
+local function getMyRole() 
+    local c = lp.Character; local p = c and c.Parent
+    if p and (p.Name == "Survivors" or p.Name == "Killers") then return p.Name end
+    return nil 
+end
+
 local function getMyRoot()
     local c = lp.Character
     if c == cachedChar then return cachedRoot end
@@ -53,42 +63,84 @@ local function getMyRoot()
     cachedHb   = c and c:FindFirstChild("QueryHitbox") or nil
     return cachedRoot
 end
-local function getMyHb()
-    local c = lp.Character
-    if c ~= cachedChar then getMyRoot() end
-    if cachedHb and cachedHb.Parent then return cachedHb end
-    cachedHb = c and c:FindFirstChild("QueryHitbox") or nil
-    return cachedHb
-end
+
 local function isSurvivor() return getMyRole() == "Survivors" end
 
 local function hasHelplessEffect()
-    local char = lp.Character; if not char then return true end
+    local char = lp.Character
+    if not char then return true end
     local hum = char:FindFirstChildOfClass("Humanoid")
     if not hum or hum.Health <= 0 then return true end
     if hum:GetState() == Enum.HumanoidStateType.Dead then return true end
     if char:GetAttribute("Helpless") or char:GetAttribute("Grabbed") or char:GetAttribute("Incapacitated") or char:GetAttribute("BeingCarried") then return true end
-    if hum.PlatformStand then local hrp = char:FindFirstChild("HumanoidRootPart"); if hrp and hrp.AssemblyLinearVelocity.Magnitude < 2 then return true end end
     return false
 end
 
-local function isLocalPlayerChar(m) if not m then return true end if m == lp.Character then return true end return Players:GetPlayerFromCharacter(m) == lp end
+local function isLocalPlayerChar(m) 
+    if not m then return true end
+    if m == lp.Character then return true end
+    return Players:GetPlayerFromCharacter(m) == lp 
+end
+
 local firesignalF = (typeof(firesignal) == "function") and firesignal or rawget(getfenv(), "FireSignal") or rawget(getfenv(), "firesignal")
 
 -- =========================================================
--- INSTANT NAME-MATCH LOGIC (No Blacklist, No Polling)
+-- STRICT M1 FILTER (Exact Reference)
 -- =========================================================
-local ATTACK_NAMES = {"slash", "enragedslash", "stab", "attack", "punch", "swing", "golemslash", "m1", "hit"}
+local BlockableAttacks = {
+    slash = true, enragedslash = true, stab = true, 
+    attack = true, punch = true, swing = true, golemslash = true
+}
 
 local function isM1Name(name)
     if not name then return false end
-    local lname = tostring(name):lower()
-    for _, atk in ipairs(ATTACK_NAMES) do
+    local lname = string.lower(name)
+    for atk in pairs(BlockableAttacks) do
         if lname:find(atk, 1, true) then return true end
     end
     return false
 end
 
+local ATTACK_ANIM_MAP = {}
+local function buildAttackAnimMap()
+    local assets = ReplicatedStorage:FindFirstChild("Assets")
+    local killers = assets and assets:FindFirstChild("Killers")
+    if not killers then return end
+    for _, km in ipairs(killers:GetChildren()) do
+        local cfg = km:FindFirstChild("Config")
+        if cfg and cfg:IsA("ModuleScript") then
+            local ok, data = pcall(require, cfg)
+            if ok and type(data) == "table" then
+                local anims = data.Animations or (data.Config and data.Config.Animations)
+                if type(anims) == "table" then
+                    for abilityName, animValue in pairs(anims) do
+                        local lname = string.lower(abilityName)
+                        local ids = {}
+                        local function collect(v)
+                            if type(v) == "string" then local id = v:match("(%d+)"); if id then table.insert(ids, id) end
+                            elseif type(v) == "number" then table.insert(ids, tostring(v))
+                            elseif type(v) == "table" then for _, x in pairs(v) do collect(x) end end
+                        end
+                        collect(animValue)
+                        for _, id in ipairs(ids) do ATTACK_ANIM_MAP[id] = lname end
+                    end
+                end
+            end
+        end
+    end
+end
+buildAttackAnimMap()
+task.spawn(function() while true do task.wait(30); pcall(buildAttackAnimMap) end end)
+
+local function getAttackName(animId, animName)
+    local mapped = ATTACK_ANIM_MAP[tostring(animId)]
+    if mapped then return mapped end
+    return string.lower(animName or "")
+end
+
+-- =========================================================
+-- BLOCK FIRING (Exact Reference)
+-- =========================================================
 local BlockButton = nil
 local function getBlockButton()
     if BlockButton and BlockButton.Parent then return BlockButton end
@@ -103,19 +155,21 @@ local lastBlockFire = 0
 local BLOCK_Cfg = { Debug = false }
 local IS_OFFICIAL_GAME = (game.GameId == 6331902150 or game.GameId == 7464167604)
 
--- INSTANT FIRE (No delays, no checks)
 local function fireBlockNow()
     local now = tick()
-    if now - lastBlockFire < 0.05 then return false end -- Just a tiny 50ms debounce so it doesn't spam
+    if now - lastBlockFire < 0.02 then return false end
     lastBlockFire = now
 
-    -- 1. Fire Signal (UI button)
+    -- Exact Reference: FireSignal first, break if successful
     local btn = getBlockButton()
     if firesignalF and btn then
-        pcall(firesignalF, btn.MouseButton1Click)
+        if pcall(firesignalF, btn.MouseButton1Click) then
+            if BLOCK_Cfg.Debug then print("[AB] fired via signal") end
+            return true
+        end
     end
 
-    -- 2. Fire Remote (Both formats, exactly like reference)
+    -- Fallback to Remote if Signal fails
     if RemoteEvent then
         if IS_OFFICIAL_GAME then
             pcall(function() RemoteEvent:FireServer("UseActorAbility", {"Block"}) end)
@@ -123,117 +177,93 @@ local function fireBlockNow()
             pcall(function() RemoteEvent:FireServer("UseActorAbility", "Block") end)
             pcall(function() RemoteEvent:FireServer("UseActorAbility", {"Block"}) end)
         end
+        if BLOCK_Cfg.Debug then print("[AB] fired via remote") end
+        return true
     end
     
-    if BLOCK_Cfg.Debug then print("[AB] INSTANT BLOCK FIRED") end
-    return true
+    return false
 end
 
 local AB_Cfg = {
-    Enabled = false, AnimTrigger = true, SoundTrigger = true,
-    WallCheck = false, MaxDistance = 999, Debug = false, -- Ignored in new logic
+    Enabled = false, 
+    AnimTrigger = true, 
+    SoundTrigger = true,
+    Debug = false,
 }
 
 -- =========================================================
--- HMT (Kept, uses hitbox math)
+-- AUTO BLOCK HITBOX LOGIC (EXACT REFERENCE COPY)
 -- =========================================================
-local HMT = {
-    Enabled = false, Speed = 13, TriggerRange = 30, MaxTravel = 20,
-    MaxTime = 0.6, HoldFrames = 2, SnapBack = true, Debug = false,
-    _active = false, _thread = nil, _savedCF = nil, _savedVel = nil, _savedAng = nil,
-}
+local function tryBlockWithHitbox(killer, attackName)
+    if not AB_Cfg.Enabled then return end
+    if not isSurvivor() or hasHelplessEffect() then return end
+    if not Players:GetPlayerFromCharacter(killer) then return end
 
-local function hmtStart(killer, attackType)
-    if not HMT.Enabled then return false end
-    if HMT._active then return false end
-    if not killer or not killer.Parent then return false end
-    if not isSurvivor() or hasHelplessEffect() then return false end
+    local lname = string.lower(attackName)
+    if not BlockableAttacks[lname] then return end
 
     local char = lp.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if not hrp or not hum then return false end
+    local myHb = char and char:FindFirstChild("QueryHitbox")
+    local qh = killer:FindFirstChild("QueryHitbox") or killer:WaitForChild("QueryHitbox", 0.5)
+    if not myHb or not qh then return end
 
-    local kh = killer:FindFirstChild("HumanoidRootPart")
-    local qh = killer:FindFirstChild("QueryHitbox")
-    if not kh or not qh then return false end
-    local dist = (kh.Position - hrp.Position).Magnitude
-    if dist > HMT.TriggerRange then return false end
+    if AB_Cfg.Debug then print("[AB] Checking hitbox for: " .. lname) end
 
-    HMT._active = true
-    HMT._savedCF  = hrp.CFrame
-    HMT._savedVel = hrp.AssemblyLinearVelocity
-    HMT._savedAng = hrp.AssemblyAngularVelocity
+    local custom = nil
+    if lname == "golemslash" then
+        custom = { Size = Vector3.new(6, 2, 7), Offset = CFrame.new(0,0,-5.5) }
+    end
 
-    local savedWalk = hum.WalkSpeed
-    hum.WalkSpeed = 0
+    local selfParams = OverlapParams.new()
+    selfParams.MaxParts = 1
+    selfParams.FilterType = Enum.RaycastFilterType.Include
+    selfParams.FilterDescendantsInstances = { myHb }
 
-    HMT._thread = task.spawn(function()
-        local start    = tick()
-        local traveled = 0
-        local lastPos  = hrp.Position
-        local blocked  = false
-        local savedCF  = HMT._savedCF
-        local savedVel = HMT._savedVel
-        local savedAng = HMT._savedAng
+    local hitboxesFolder = workspace:FindFirstChild("Hitboxes") or workspace
 
-        pcall(function()
-            while HMT._active and tick() - start < HMT.MaxTime do
-                if not killer.Parent or not hrp.Parent or hasHelplessEffect() then break end
-                local qh2 = killer:FindFirstChild("QueryHitbox")
-                if not qh2 then break end
-                local tgt   = qh2.Position
+    -- Exact Reference: 12 iterations, 0.02s wait
+    for i = 1, 12 do
+        if not AB_Cfg.Enabled then break end
+        if not char or not char.Parent or not qh or not qh.Parent then break end
+        
+        local part = Instance.new("Part")
+        part.Name = "SCPHubBlockProbe"
+        part.Anchored = true
+        part.CanCollide = false
+        part.CanTouch = false
+        part.CanQuery = false
+        part.CastShadow = false
+        part.Material = Enum.Material.ForceField
+        part.Size = (custom and custom.Size or Vector3.new(5.2, 6, 5.65)) * 2.2
+        part.CFrame = qh.CFrame * (custom and custom.Offset or CFrame.new(0,0,-3.5))
+        part.Transparency = 1
+        part.Parent = hitboxesFolder
+        Debris:AddItem(part, 0.4)
 
-                local myPos = hrp.Position
-                local flat2 = Vector3.new(tgt.X, myPos.Y, tgt.Z)
-                local delta = flat2 - myPos
-                if delta.Magnitude < 2.5 then
-                    fireBlockNow(); blocked = true; break
-                end
-
-                local step = math.min(HMT.Speed * 0.03, delta.Magnitude)
-                local newPos = myPos + delta.Unit * step
-
-                hrp.CFrame = CFrame.lookAt(newPos, flat2)
-                hrp.AssemblyLinearVelocity  = Vector3.zero
-                hrp.AssemblyAngularVelocity = Vector3.zero
-
-                traveled = traveled + (newPos - lastPos).Magnitude
-                lastPos  = newPos
-                if traveled > HMT.MaxTravel then break end
-                task.wait(0.03)
+        local hits = workspace:GetPartsInPart(part, selfParams)
+        if #hits > 0 then
+            if fireBlockNow() then
+                if AB_Cfg.Debug then print("[AB] Blocked " .. lname .. " at step " .. i) end
+                break
             end
-        end)
-
-        if HMT.SnapBack and hrp and hrp.Parent then
-            pcall(function()
-                hrp.CFrame = savedCF
-                hrp.AssemblyLinearVelocity  = savedVel
-                hrp.AssemblyAngularVelocity = savedAng
-            end)
         end
-        if hum and hum.Parent then pcall(function() hum.WalkSpeed = savedWalk end) end
-        HMT._active    = false; HMT._thread    = nil
-        HMT._savedCF   = nil;   HMT._savedVel  = nil; HMT._savedAng  = nil
-    end)
-    return true
+        task.wait(0.02)
+    end
 end
 
 -- =========================================================
--- INSTANT TRIGGERS (Animations and Sounds)
+-- TRIGGERS
 -- =========================================================
 local hookedSounds = setmetatable({}, { __mode = "k" })
 local hookedAnims = setmetatable({}, { __mode = "k" })
 
 local function onSoundTrigger(sound)
     if not AB_Cfg.Enabled or not AB_Cfg.SoundTrigger then return end
-    if not isSurvivor() or hasHelplessEffect() then return end
-    
-    -- Check if sound name matches M1
-    if isM1Name(sound.Name) then
+    local soundName = string.lower(sound.Name)
+    if isM1Name(soundName) then
         local killer = sound:FindFirstAncestorOfClass("Model")
         if killer then
-            if HMT.Enabled then hmtStart(killer, sound.Name) else fireBlockNow() end
+            task.spawn(function() tryBlockWithHitbox(killer, soundName) end)
         end
     end
 end
@@ -246,12 +276,14 @@ end
 
 local function onAnimTrigger(track, killer)
     if not AB_Cfg.Enabled or not AB_Cfg.AnimTrigger then return end
-    if not isSurvivor() or hasHelplessEffect() then return end
+    local anim = track.Animation
+    if not anim then return end
     
-    -- Check if animation name OR ID matches M1
-    local animName = track.Animation and track.Animation.Name or ""
-    if isM1Name(animName) then
-        if HMT.Enabled then hmtStart(killer, animName) else fireBlockNow() end
+    local animId = tostring(anim.AnimationId):match("(%d+)")
+    local atkName = getAttackName(animId, anim.Name)
+    
+    if BlockableAttacks[atkName] then
+        task.spawn(function() tryBlockWithHitbox(killer, atkName) end)
     end
 end
 
@@ -265,48 +297,164 @@ local function hookKiller(killer)
 end
 
 -- =========================================================
--- Box System
+-- Box System (Fixed to STRICTLY only spawn on M1)
 -- =========================================================
 local BoxCfg = { Enabled = false, AppearMode = "M1", Color = Color3.fromRGB(255, 60, 60), Width = 12, Height = 8, Length = 30, Transparency = 0.3, M1Boxes = 1, M1Spread = 3, M1FadeTime = 1, Debug = false, Long = {} }
 local BOX_FOLDER = nil
-local function ensureBoxFolder() if BOX_FOLDER and BOX_FOLDER.Parent then return BOX_FOLDER end local f = Workspace:FindFirstChild("SCPHub_Boxes") if not f then f = Instance.new("Folder"); f.Name = "SCPHub_Boxes"; f.Parent = Workspace end BOX_FOLDER = f return f end
+
+local function ensureBoxFolder() 
+    if BOX_FOLDER and BOX_FOLDER.Parent then return BOX_FOLDER end 
+    local f = Workspace:FindFirstChild("SCPHub_Boxes") 
+    if not f then 
+        f = Instance.new("Folder")
+        f.Name = "SCPHub_Boxes"
+        f.Parent = Workspace 
+    end 
+    BOX_FOLDER = f 
+    return f 
+end
+
 local lastBoxSpawn = setmetatable({}, { __mode = "k" })
-local function spawnM1Boxes(killer, reason, attackType)
+
+local function spawnM1Boxes(killer, attackType)
     if not killer or not killer.Parent then return end
-    local qh = killer:FindFirstChild("QueryHitbox"); if not qh then return end
-    local now = tick(); if lastBoxSpawn[killer] and now - lastBoxSpawn[killer] < 0.1 then return end; lastBoxSpawn[killer] = now
-    local folder = ensureBoxFolder(); local count = math.max(1, math.floor(BoxCfg.M1Boxes))
-    local baseCF = qh.CFrame * CFrame.new(0, 0, -3.5); local visualSize = Vector3.new(5.2, 6, 5.65) * 2.2
-    for i = 1, count do
-        local p = Instance.new("Part"); p.Name = "SCPHubM1Box"; p.Anchored = true; p.CanCollide = false; p.CanTouch = false; p.CanQuery = false; p.CastShadow = false; p.Massless = true; p.Material = Enum.Material.Neon; p.Color = BoxCfg.Color; p.Transparency = 0.15; p.Size = visualSize
-        p.CFrame = baseCF * CFrame.new((i - (count + 1) / 2) * BoxCfg.M1Spread, 0, 0); p.Parent = folder
-        TweenService:Create(p, TweenInfo.new(math.max(0.3, BoxCfg.M1FadeTime), Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Transparency = 1 }):Play(); Debris:AddItem(p, BoxCfg.M1FadeTime + 0.1)
+    local qh = killer:FindFirstChild("QueryHitbox")
+    if not qh then return end
+    
+    local now = tick()
+    if lastBoxSpawn[killer] and now - lastBoxSpawn[killer] < 0.1 then return end
+    lastBoxSpawn[killer] = now
+    
+    local folder = ensureBoxFolder()
+    local count = math.max(1, math.floor(BoxCfg.M1Boxes))
+    
+    local custom = nil
+    if attackType == "golemslash" then
+        custom = { Size = Vector3.new(6, 2, 7), Offset = CFrame.new(0,0,-5.5) }
     end
-end
-local function destroyLongBox(killer) local d = BoxCfg.Long[killer]; if not d then return end; if d.part and d.part.Parent then pcall(function() d.part:Destroy() end) end; if d.hl and d.hl.Parent then pcall(function() d.hl:Destroy() end) end; if d.conn then pcall(function() d.conn:Disconnect() end) end; BoxCfg.Long[killer] = nil end
-local function createLongBox(killer)
-    if not killer or not killer:IsA("Model") then return end; destroyLongBox(killer)
-    local folder = ensureBoxFolder(); local part = Instance.new("Part"); part.Name = "SCPHubLong_" .. killer.Name; part.Anchored = true; part.CanCollide = false; part.CanTouch = false; part.CanQuery = false; part.Massless = true; part.CastShadow = false; part.Material = Enum.Material.Neon; part.Color = BoxCfg.Color; part.Size = Vector3.new(BoxCfg.Width, BoxCfg.Height, BoxCfg.Length); part.Transparency = BoxCfg.Transparency
-    local hrp = killer:FindFirstChild("HumanoidRootPart"); if hrp then part.CFrame = CFrame.lookAt(hrp.Position + hrp.CFrame.LookVector * (BoxCfg.Length * 0.5), hrp.Position + hrp.CFrame.LookVector * (BoxCfg.Length * 0.5 + 1)) else part.CFrame = killer:GetPivot() end
-    part.Parent = folder
-    local hl = Instance.new("Highlight"); hl.Name = "SCPHubLongBoxHL"; hl.Adornee = part; hl.FillColor = BoxCfg.Color; hl.OutlineColor = BoxCfg.Color; hl.FillTransparency = 1; hl.OutlineTransparency = 0; hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop; hl.Parent = part
-    local data = { part = part, hl = hl, conn = nil }; BoxCfg.Long[killer] = data
-    data.conn = RunService.Heartbeat:Connect(function()
-        if not killer.Parent or not part.Parent then destroyLongBox(killer); return end
-        local h = killer:FindFirstChild("HumanoidRootPart"); if h then part.CFrame = CFrame.lookAt(h.Position + h.CFrame.LookVector * (BoxCfg.Length * 0.5), h.Position + h.CFrame.LookVector * (BoxCfg.Length * 0.5 + 1)) end
-        part.Size = Vector3.new(BoxCfg.Width, BoxCfg.Height, BoxCfg.Length); part.Color = BoxCfg.Color
-        local show = BoxCfg.Enabled and BoxCfg.AppearMode == "Always"; part.Transparency = show and BoxCfg.Transparency or 1
-        if hl and hl.Parent then hl.FillColor = BoxCfg.Color; hl.OutlineColor = BoxCfg.Color; hl.OutlineTransparency = show and 0 or 1 end
-    end)
-end
-local function ensureBoxes()
-    local pf = Workspace:FindFirstChild("Players"); local kf = pf and pf:FindFirstChild("Killers"); if not kf then return end
-    for _, k in ipairs(kf:GetChildren()) do if k:IsA("Model") then if BoxCfg.Enabled and BoxCfg.AppearMode == "Always" and not BoxCfg.Long[k] then createLongBox(k) elseif (not BoxCfg.Enabled or BoxCfg.AppearMode ~= "Always") and BoxCfg.Long[k] then destroyLongBox(k) end end end
+    local visualSize = (custom and custom.Size or Vector3.new(5.2, 6, 5.65)) * 2.2
+    local baseCF = qh.CFrame * (custom and custom.Offset or CFrame.new(0,0,-3.5))
+    
+    for i = 1, count do
+        local p = Instance.new("Part")
+        p.Name = "SCPHubM1Box"
+        p.Anchored = true
+        p.CanCollide = false
+        p.CanTouch = false
+        p.CanQuery = false
+        p.CastShadow = false
+        p.Massless = true
+        p.Material = Enum.Material.Neon
+        p.Color = BoxCfg.Color
+        p.Transparency = 0.15
+        p.Size = visualSize
+        p.CFrame = baseCF * CFrame.new((i - (count + 1) / 2) * BoxCfg.M1Spread, 0, 0)
+        p.Parent = folder
+        
+        TweenService:Create(p, TweenInfo.new(math.max(0.3, BoxCfg.M1FadeTime), Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Transparency = 1 }):Play()
+        Debris:AddItem(p, BoxCfg.M1FadeTime + 0.1)
+    end
 end
 
 local function hookKillerM1Box(killer)
-    local hum = killer:FindFirstChildOfClass("Humanoid"); local animator = hum and hum:FindFirstChildOfClass("Animator"); if not animator then return end
-    animator.AnimationPlayed:Connect(function(track) if BoxCfg.Enabled and BoxCfg.AppearMode == "M1" then spawnM1Boxes(killer, "anim", track.Animation and track.Animation.Name or "") end end)
+    local hum = killer:FindFirstChildOfClass("Humanoid")
+    local animator = hum and hum:FindFirstChildOfClass("Animator")
+    if not animator then return end
+    
+    animator.AnimationPlayed:Connect(function(track) 
+        if not BoxCfg.Enabled or BoxCfg.AppearMode ~= "M1" then return end
+        local anim = track.Animation
+        if not anim then return end
+        
+        local animId = tostring(anim.AnimationId):match("(%d+)")
+        local atkName = getAttackName(animId, anim.Name)
+        
+        -- FIX: ONLY spawn if it is an actual M1 attack, ignoring Walk, Run, Idle.
+        if BlockableAttacks[atkName] then
+            spawnM1Boxes(killer, atkName) 
+        end
+    end)
+end
+
+local function destroyLongBox(killer) 
+    local d = BoxCfg.Long[killer]
+    if not d then return end
+    if d.part and d.part.Parent then pcall(function() d.part:Destroy() end) end
+    if d.hl and d.hl.Parent then pcall(function() d.hl:Destroy() end) end
+    if d.conn then pcall(function() d.conn:Disconnect() end) end
+    BoxCfg.Long[killer] = nil 
+end
+
+local function createLongBox(killer)
+    if not killer or not killer:IsA("Model") then return end
+    destroyLongBox(killer)
+    
+    local folder = ensureBoxFolder()
+    local part = Instance.new("Part")
+    part.Name = "SCPHubLong_" .. killer.Name
+    part.Anchored = true
+    part.CanCollide = false
+    part.CanTouch = false
+    part.CanQuery = false
+    part.Massless = true
+    part.CastShadow = false
+    part.Material = Enum.Material.Neon
+    part.Color = BoxCfg.Color
+    part.Size = Vector3.new(BoxCfg.Width, BoxCfg.Height, BoxCfg.Length)
+    part.Transparency = BoxCfg.Transparency
+    
+    local hrp = killer:FindFirstChild("HumanoidRootPart")
+    if hrp then 
+        part.CFrame = CFrame.lookAt(hrp.Position + hrp.CFrame.LookVector * (BoxCfg.Length * 0.5), hrp.Position + hrp.CFrame.LookVector * (BoxCfg.Length * 0.5 + 1))
+    else 
+        part.CFrame = killer:GetPivot() 
+    end
+    part.Parent = folder
+    
+    local hl = Instance.new("Highlight")
+    hl.Name = "SCPHubLongBoxHL"
+    hl.Adornee = part
+    hl.FillColor = BoxCfg.Color
+    hl.OutlineColor = BoxCfg.Color
+    hl.FillTransparency = 1
+    hl.OutlineTransparency = 0
+    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    hl.Parent = part
+    
+    local data = { part = part, hl = hl, conn = nil }
+    BoxCfg.Long[killer] = data
+    
+    data.conn = RunService.Heartbeat:Connect(function()
+        if not killer.Parent or not part.Parent then destroyLongBox(killer); return end
+        local h = killer:FindFirstChild("HumanoidRootPart")
+        if h then 
+            part.CFrame = CFrame.lookAt(h.Position + h.CFrame.LookVector * (BoxCfg.Length * 0.5), h.Position + h.CFrame.LookVector * (BoxCfg.Length * 0.5 + 1)) 
+        end
+        part.Size = Vector3.new(BoxCfg.Width, BoxCfg.Height, BoxCfg.Length)
+        part.Color = BoxCfg.Color
+        local show = BoxCfg.Enabled and BoxCfg.AppearMode == "Always"
+        part.Transparency = show and BoxCfg.Transparency or 1
+        if hl and hl.Parent then 
+            hl.FillColor = BoxCfg.Color
+            hl.OutlineColor = BoxCfg.Color
+            hl.OutlineTransparency = show and 0 or 1 
+        end
+    end)
+end
+
+local function ensureBoxes()
+    local pf = Workspace:FindFirstChild("Players")
+    local kf = pf and pf:FindFirstChild("Killers")
+    if not kf then return end
+    for _, k in ipairs(kf:GetChildren()) do 
+        if k:IsA("Model") then 
+            if BoxCfg.Enabled and BoxCfg.AppearMode == "Always" and not BoxCfg.Long[k] then 
+                createLongBox(k) 
+            elseif (not BoxCfg.Enabled or BoxCfg.AppearMode ~= "Always") and BoxCfg.Long[k] then 
+                destroyLongBox(k) 
+            end 
+        end 
+    end
 end
 
 -- =========================================================
@@ -320,13 +468,26 @@ task.spawn(function()
         if pf then
             local kf = pf:FindFirstChild("Killers")
             if kf and kf ~= lastK then
-                KillersFolder = kf; lastK = kf
-                for _, d in ipairs(kf:GetDescendants()) do if d:IsA("Sound") then hookSound(d) end end
-                kf.DescendantAdded:Connect(function(d) if d:IsA("Sound") then hookSound(d) end end)
-                for _, k in ipairs(kf:GetChildren()) do
-                    if k:IsA("Model") then hookKiller(k); hookKillerM1Box(k) end
+                KillersFolder = kf
+                lastK = kf
+                for _, d in ipairs(kf:GetDescendants()) do 
+                    if d:IsA("Sound") then hookSound(d) end 
                 end
-                kf.ChildAdded:Connect(function(k) if k:IsA("Model") then hookKiller(k); hookKillerM1Box(k) end end)
+                kf.DescendantAdded:Connect(function(d) 
+                    if d:IsA("Sound") then hookSound(d) end 
+                end)
+                for _, k in ipairs(kf:GetChildren()) do
+                    if k:IsA("Model") then 
+                        hookKiller(k)
+                        hookKillerM1Box(k) 
+                    end
+                end
+                kf.ChildAdded:Connect(function(k) 
+                    if k:IsA("Model") then 
+                        hookKiller(k)
+                        hookKillerM1Box(k) 
+                    end 
+                end)
             end
             if kf then ensureBoxes() end
         end
@@ -334,76 +495,229 @@ task.spawn(function()
 end)
 
 -- =========================================================
--- ESP
+-- ESP (Full Restore)
 -- =========================================================
-local ESP_CFG = { Killers = { Enabled=false, TextEnabled=false, FillColor=Color3.fromRGB(255,40,40), OutlineColor=Color3.new(1,1,1), FillTransparency=0.55, OutlineTransparency=0 }, Survivors = { Enabled=false, TextEnabled=false, FillColor=Color3.fromRGB(40,255,90), OutlineColor=Color3.new(1,1,1), FillTransparency=0.55, OutlineTransparency=0 } }
+local ESP_CFG = { 
+    Killers = { Enabled=false, TextEnabled=false, FillColor=Color3.fromRGB(255,40,40), OutlineColor=Color3.new(1,1,1), FillTransparency=0.55, OutlineTransparency=0 }, 
+    Survivors = { Enabled=false, TextEnabled=false, FillColor=Color3.fromRGB(40,255,90), OutlineColor=Color3.new(1,1,1), FillTransparency=0.55, OutlineTransparency=0 } 
+}
 local ESP_TRACK = setmetatable({}, { __mode = "k" })
-local function espClear(m) local t = ESP_TRACK[m]; if not t then return end; for _, o in pairs(t) do if o then pcall(function() o:Destroy() end) end end; ESP_TRACK[m] = nil end
+
+local function espClear(m) 
+    local t = ESP_TRACK[m]
+    if not t then return end
+    for _, o in pairs(t) do 
+        if o then pcall(function() o:Destroy() end) end 
+    end
+    ESP_TRACK[m] = nil 
+end
+
 local function espEnsure(m, cfg, isKiller, myHrp)
     if not m or not m.Parent then espClear(m); return end
-    local hum = m:FindFirstChildOfClass("Humanoid"); if hum and hum.Health <= 0 then espClear(m); return end
-    if not cfg.Enabled and not cfg.TextEnabled then if ESP_TRACK[m] then espClear(m) end return end
-    local t = ESP_TRACK[m]; if not t then t = {}; ESP_TRACK[m] = t end
+    local hum = m:FindFirstChildOfClass("Humanoid")
+    if hum and hum.Health <= 0 then espClear(m); return end
+    if not cfg.Enabled and not cfg.TextEnabled then 
+        if ESP_TRACK[m] then espClear(m) end 
+        return 
+    end
+    local t = ESP_TRACK[m]
+    if not t then t = {}; ESP_TRACK[m] = t end
     if t.Chams and not t.Chams.Parent then t.Chams = nil end
+    
     if cfg.Enabled then
-        if not t.Chams then local h = Instance.new("Highlight"); h.Adornee = m; h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop; h.Parent = m; t.Chams = h end
-        t.Chams.FillColor = cfg.FillColor; t.Chams.OutlineColor = cfg.OutlineColor; t.Chams.FillTransparency = cfg.FillTransparency; t.Chams.OutlineTransparency = cfg.OutlineTransparency
-    elseif t.Chams then pcall(function() t.Chams:Destroy() end); t.Chams = nil end
-    if t.Billboard and not t.Billboard.Parent then t.Billboard = nil; t.Label = nil end
+        if not t.Chams then 
+            local h = Instance.new("Highlight")
+            h.Adornee = m
+            h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+            h.Parent = m
+            t.Chams = h 
+        end
+        t.Chams.FillColor = cfg.FillColor
+        t.Chams.OutlineColor = cfg.OutlineColor
+        t.Chams.FillTransparency = cfg.FillTransparency
+        t.Chams.OutlineTransparency = cfg.OutlineTransparency
+    elseif t.Chams then 
+        pcall(function() t.Chams:Destroy() end)
+        t.Chams = nil 
+    end
+    
+    if t.Billboard and not t.Billboard.Parent then 
+        t.Billboard = nil; t.Label = nil 
+    end
+    
     if cfg.TextEnabled and cfg.Enabled then
         if not t.Billboard then
-            local bb = Instance.new("BillboardGui"); bb.Name = "SCPHub_ESPText"; bb.Size = UDim2.new(0, 200, 0, 40); bb.StudsOffset = Vector3.new(0, 3, 0); bb.AlwaysOnTop = true; bb.Parent = m
-            local lbl = Instance.new("TextLabel"); lbl.Size = UDim2.new(1, 0, 1, 0); lbl.BackgroundTransparency = 1; lbl.TextStrokeTransparency = 0; lbl.TextStrokeColor3 = Color3.new(0, 0, 0); lbl.Font = Enum.Font.FredokaOne; lbl.TextScaled = true; lbl.Parent = bb
+            local bb = Instance.new("BillboardGui")
+            bb.Name = "SCPHub_ESPText"
+            bb.Size = UDim2.new(0, 200, 0, 40)
+            bb.StudsOffset = Vector3.new(0, 3, 0)
+            bb.AlwaysOnTop = true
+            bb.Parent = m
+            local lbl = Instance.new("TextLabel")
+            lbl.Size = UDim2.new(1, 0, 1, 0)
+            lbl.BackgroundTransparency = 1
+            lbl.TextStrokeTransparency = 0
+            lbl.TextStrokeColor3 = Color3.new(0, 0, 0)
+            lbl.Font = Enum.Font.FredokaOne
+            lbl.TextScaled = true
+            lbl.Parent = bb
             t.Billboard = bb; t.Label = lbl
         end
-        local hrp = m:FindFirstChild("HumanoidRootPart"); local dist = 0; if hrp and myHrp then dist = math.floor((hrp.Position - myHrp.Position).Magnitude) end
-        t.Label.Text = string.format("%s %s [%d]", isKiller and "[K]" or "[S]", m.Name, dist); t.Label.TextColor3 = cfg.FillColor
-    elseif t.Billboard then pcall(function() t.Billboard:Destroy() end); t.Billboard = nil; t.Label = nil end
+        local hrp = m:FindFirstChild("HumanoidRootPart")
+        local dist = 0
+        if hrp and myHrp then dist = math.floor((hrp.Position - myHrp.Position).Magnitude) end
+        t.Label.Text = string.format("%s %s [%d]", isKiller and "[K]" or "[S]", m.Name, dist)
+        t.Label.TextColor3 = cfg.FillColor
+    elseif t.Billboard then 
+        pcall(function() t.Billboard:Destroy() end)
+        t.Billboard = nil; t.Label = nil 
+    end
 end
-local function espCollectFromFolder(folder) local out = {} if not folder then return out end for _, m in ipairs(folder:GetChildren()) do if m:IsA("Model") and m:FindFirstChildOfClass("Humanoid") then out[#out+1] = m end end return out end
+
+local function espCollectFromFolder(folder) 
+    local out = {} 
+    if not folder then return out end 
+    for _, m in ipairs(folder:GetChildren()) do 
+        if m:IsA("Model") and m:FindFirstChildOfClass("Humanoid") then out[#out+1] = m end 
+    end 
+    return out 
+end
+
 task.spawn(function()
     while true do
         task.wait(0.3)
         pcall(function()
-            local pf = Workspace:FindFirstChild("Players"); local kf = pf and pf:FindFirstChild("Killers"); local sf = pf and pf:FindFirstChild("Survivors"); local myHrp = getMyRoot()
-            for _, m in ipairs(espCollectFromFolder(kf)) do if not isLocalPlayerChar(m) then espEnsure(m, ESP_CFG.Killers, true, myHrp) end end
-            for _, m in ipairs(espCollectFromFolder(sf)) do if not isLocalPlayerChar(m) then espEnsure(m, ESP_CFG.Survivors, false, myHrp) end end
-            for m in pairs(ESP_TRACK) do if not m.Parent then espClear(m) end end
+            local pf = Workspace:FindFirstChild("Players")
+            local kf = pf and pf:FindFirstChild("Killers")
+            local sf = pf and pf:FindFirstChild("Survivors")
+            local myHrp = getMyRoot()
+            for _, m in ipairs(espCollectFromFolder(kf)) do 
+                if not isLocalPlayerChar(m) then espEnsure(m, ESP_CFG.Killers, true, myHrp) end 
+            end
+            for _, m in ipairs(espCollectFromFolder(sf)) do 
+                if not isLocalPlayerChar(m) then espEnsure(m, ESP_CFG.Survivors, false, myHrp) end 
+            end
+            for m in pairs(ESP_TRACK) do 
+                if not m.Parent then espClear(m) end 
+            end
         end)
     end
 end)
 
 -- =========================================================
--- Auto Gen
+-- Auto Gen (Fixed Anti-Cheat Kick / Bugging)
 -- =========================================================
-local AUTOGEN = { Enabled = false, Interval = 1, MaxDistance = 10, _thread = nil, Debug = false, SkillCheckEnabled = true, SkillCheckSpamMode = false, MemoryEnabled = true, GearEnabled = true, RotateDirection = 1 }
-local function getIngameMap() local map = Workspace:FindFirstChild("Map"); map = map and map:FindFirstChild("Ingame"); return map and map:FindFirstChild("Map") end
+local AUTOGEN = { Enabled = false, Interval = 3, MaxDistance = 10, _thread = nil, Debug = false, SkillCheckEnabled = true, SkillCheckSpamMode = false, MemoryEnabled = true, GearEnabled = true, RotateDirection = 1 }
+
+local function getIngameMap() 
+    local map = Workspace:FindFirstChild("Map")
+    map = map and map:FindFirstChild("Ingame")
+    return map and map:FindFirstChild("Map") 
+end
+
 local function fireInteraction(obj, args)
     if not obj or not obj.Parent then return false end
-    local fired = false; local pp = obj:FindFirstChildWhichIsA("ProximityPrompt", true); if pp and type(fireproximityprompt) == "function" then pcall(fireproximityprompt, pp); fired = true end
-    local cd = obj:FindFirstChildWhichIsA("ClickDetector", true); if cd and type(fireclickdetector) == "function" then pcall(fireclickdetector, cd); fired = true end
-    for _, fname in ipairs({"Remotes", "RemoteEvents", "Events", "Remote"}) do local folder = obj:FindFirstChild(fname); if folder then for _, re in ipairs(folder:GetChildren()) do if re:IsA("RemoteEvent") then if args then pcall(function() re:FireServer(table.unpack(args)) end) else pcall(function() re:FireServer() end) end; fired = true end end end end
-    local re = obj:FindFirstChildWhichIsA("RemoteEvent"); if re then if args then pcall(function() re:FireServer(table.unpack(args)) end) else pcall(function() re:FireServer() end) end; fired = true end
+    local fired = false
+    local pp = obj:FindFirstChildWhichIsA("ProximityPrompt", true)
+    if pp and type(fireproximityprompt) == "function" then pcall(fireproximityprompt, pp); fired = true end
+    local cd = obj:FindFirstChildWhichIsA("ClickDetector", true)
+    if cd and type(fireclickdetector) == "function" then pcall(fireclickdetector, cd); fired = true end
+    for _, fname in ipairs({"Remotes", "RemoteEvents", "Events", "Remote"}) do 
+        local folder = obj:FindFirstChild(fname)
+        if folder then 
+            for _, re in ipairs(folder:GetChildren()) do 
+                if re:IsA("RemoteEvent") then 
+                    if args then pcall(function() re:FireServer(table.unpack(args)) end) 
+                    else pcall(function() re:FireServer() end) end
+                    fired = true 
+                end 
+            end 
+        end 
+    end
+    local re = obj:FindFirstChildWhichIsA("RemoteEvent")
+    if re then 
+        if args then pcall(function() re:FireServer(table.unpack(args)) end) 
+        else pcall(function() re:FireServer() end) end
+        fired = true 
+    end
     return fired
 end
+
+-- EXACT REFERENCE PUZZLE UI CHECK
+local function isPuzzleActive()
+    local ui = PlayerGui:FindFirstChild("PuzzleUI")
+    local template = ReplicatedStorage:FindFirstChild("PuzzleUI", true)
+    if not ui or not template then return false end
+    local uiObj = ui:FindFirstChildWhichIsA("GuiObject")
+    local templateObj = template:FindFirstChildWhichIsA("GuiObject")
+    if not uiObj or not templateObj then return false end
+    return uiObj.Size ~= templateObj.Size
+end
+
 local SKILL_UI = { ui = nil, lastScan = 0, lastPress = 0 }
 local function findSkillCheckUI()
-    if SKILL_UI.ui and SKILL_UI.ui.Parent and SKILL_UI.ui.Visible then return SKILL_UI.ui end; SKILL_UI.ui = nil
-    local now = tick(); if now - SKILL_UI.lastScan < 0.04 then return nil end; SKILL_UI.lastScan = now
+    if SKILL_UI.ui and SKILL_UI.ui.Parent and SKILL_UI.ui.Visible then return SKILL_UI.ui end
+    SKILL_UI.ui = nil
+    local now = tick()
+    if now - SKILL_UI.lastScan < 0.04 then return nil end
+    SKILL_UI.lastScan = now
     if not PlayerGui then return nil end
-    for _, sg in ipairs(PlayerGui:GetChildren()) do if sg:IsA("ScreenGui") and sg.Enabled then for _, d in ipairs(sg:GetDescendants()) do if d:IsA("GuiObject") and d.Visible then local n = d.Name:lower(); if n:find("skillcheck", 1, true) or n:find("needle", 1, true) or (n:find("skill", 1, true) and n:find("check", 1, true)) then SKILL_UI.ui = d; return d end end end end end
+    for _, sg in ipairs(PlayerGui:GetChildren()) do 
+        if sg:IsA("ScreenGui") and sg.Enabled then 
+            for _, d in ipairs(sg:GetDescendants()) do 
+                if d:IsA("GuiObject") and d.Visible then 
+                    local n = d.Name:lower()
+                    if n:find("skillcheck", 1, true) or n:find("needle", 1, true) or (n:find("skill", 1, true) and n:find("check", 1, true)) then 
+                        SKILL_UI.ui = d
+                        return d 
+                    end 
+                end 
+            end 
+        end 
+    end
     return nil
 end
-local function pressSkillKey() local now = tick(); if now - SKILL_UI.lastPress < 0.05 then return end; SKILL_UI.lastPress = now; pcall(function() VIM:SendKeyEvent(true, Enum.KeyCode.Space, false, game); task.wait(0.03); VIM:SendKeyEvent(false, Enum.KeyCode.Space, false, game) end) end
+
+local function pressSkillKey() 
+    local now = tick()
+    if now - SKILL_UI.lastPress < 0.05 then return end
+    SKILL_UI.lastPress = now
+    pcall(function() VIM:SendKeyEvent(true, Enum.KeyCode.Space, false, game); task.wait(0.03); VIM:SendKeyEvent(false, Enum.KeyCode.Space, false, game) end) 
+end
+
 local function handleSkillCheck()
-    local ui = findSkillCheckUI(); if not ui then return false end
+    local ui = findSkillCheckUI()
+    if not ui then return false end
     if AUTOGEN.SkillCheckSpamMode then pressSkillKey(); return true end
     local needle, zone
-    for _, d in ipairs(ui:GetDescendants()) do local n = d.Name:lower(); if not needle and (n:find("needle") or n:find("pointer") or n:find("marker")) then needle = d end; if not zone and (n:find("zone") or n:find("target") or n:find("success") or n:find("hit")) then zone = d end end
-    if needle and zone then if needle.Rotation ~= nil and zone.Rotation ~= nil then local nr = needle.Rotation % 360; local zr = zone.Rotation % 360; local zs = (zone.Size and math.abs(zone.Size.X.Scale * 360)) or 30; local diff = math.abs((nr - zr + 180) % 360 - 180); if diff <= math.max(zs / 2, 8) then pressSkillKey() end return true end; if needle.AbsolutePosition and zone.AbsolutePosition then local np = needle.AbsolutePosition.X + needle.AbsoluteSize.X / 2; local zp = zone.AbsolutePosition.X; local zw = zone.AbsoluteSize.X; if np >= zp and np <= zp + zw then pressSkillKey() end return true end end
-    local btn = ui:FindFirstChildWhichIsA("TextButton", true) or ui:FindFirstChildWhichIsA("ImageButton", true); if btn and firesignalF then pcall(firesignalF, btn.MouseButton1Click); return true end
-    pressSkillKey(); return true
+    for _, d in ipairs(ui:GetDescendants()) do 
+        local n = d.Name:lower()
+        if not needle and (n:find("needle") or n:find("pointer") or n:find("marker")) then needle = d end
+        if not zone and (n:find("zone") or n:find("target") or n:find("success") or n:find("hit")) then zone = d end 
+    end
+    if needle and zone then 
+        if needle.Rotation ~= nil and zone.Rotation ~= nil then 
+            local nr = needle.Rotation % 360
+            local zr = zone.Rotation % 360
+            local zs = (zone.Size and math.abs(zone.Size.X.Scale * 360)) or 30
+            local diff = math.abs((nr - zr + 180) % 360 - 180)
+            if diff <= math.max(zs / 2, 8) then pressSkillKey() end
+            return true 
+        end
+        if needle.AbsolutePosition and zone.AbsolutePosition then 
+            local np = needle.AbsolutePosition.X + needle.AbsoluteSize.X / 2
+            local zp = zone.AbsolutePosition.X
+            local zw = zone.AbsoluteSize.X
+            if np >= zp and np <= zp + zw then pressSkillKey() end
+            return true 
+        end 
+    end
+    local btn = ui:FindFirstChildWhichIsA("TextButton", true) or ui:FindFirstChildWhichIsA("ImageButton", true)
+    if btn and firesignalF then pcall(firesignalF, btn.MouseButton1Click); return true end
+    pressSkillKey()
+    return true
 end
+
 local function autogenLoop()
     if AUTOGEN._thread then pcall(task.cancel, AUTOGEN._thread); AUTOGEN._thread = nil end
     if not AUTOGEN.Enabled then return end
@@ -411,12 +725,37 @@ local function autogenLoop()
         while AUTOGEN.Enabled do
             pcall(function()
                 if AUTOGEN.SkillCheckEnabled and handleSkillCheck() then return end
-                local map = getIngameMap(); local mr = getMyRoot(); if not map or not mr then return end
-                local pos = mr.Position; local gens = {}; pcall(function() gens = map:QueryDescendants("Model#Generator:has(#Main)") end)
-                if not gens or #gens == 0 then for _, o in ipairs(map:GetChildren()) do if o:IsA("Model") and (o.Name == "Generator" or o.Name == "FakeGenerator") then gens[#gens+1] = o end end end
-                for _, obj in ipairs(gens) do local main = obj:FindFirstChild("Main"); local prog = obj:FindFirstChild("Progress"); if main and main:IsA("BasePart") and (main.Position - pos).Magnitude <= AUTOGEN.MaxDistance and (not prog or prog.Value ~= 100) then fireInteraction(obj) end end
+                
+                -- ANTI-CHEAT FIX: Only fire if the puzzle UI is active
+                if not isPuzzleActive() then return end
+                
+                local map = getIngameMap()
+                local mr = getMyRoot()
+                if not map or not mr then return end
+                
+                local pos = mr.Position
+                local gens = {}
+                pcall(function() gens = map:QueryDescendants("Model#Generator:has(#Main)") end)
+                
+                for _, obj in ipairs(gens) do 
+                    local main = obj:FindFirstChild("Main")
+                    local prog = obj:FindFirstChild("Progress")
+                    if main and main:IsA("BasePart") and (main.Position - pos).Magnitude <= AUTOGEN.MaxDistance and (not prog or prog.Value ~= 100) then 
+                        
+                        -- Target the exact remote
+                        local Remotes = obj:FindFirstChild("Remotes")
+                        local RemoteEvent = Remotes and Remotes:FindFirstChildOfClass("RemoteEvent")
+                        if RemoteEvent then
+                            pcall(function() RemoteEvent:FireServer() end)
+                        else
+                            fireInteraction(obj)
+                        end
+                        
+                        task.wait(AUTOGEN.Interval) -- Safe wait between fires
+                    end 
+                end
             end)
-            task.wait(0.1)
+            task.wait(0.5)
         end
         AUTOGEN._thread = nil
     end)
@@ -429,7 +768,8 @@ local Sprinting = nil
 task.spawn(function() pcall(function() Sprinting = require(ReplicatedStorage.Systems.Character.Game.Sprinting) end) end)
 local STAM = { Mode="Regular", orig=nil, _thread=nil }
 local function stamSetMode(mode)
-    STAM.Mode = mode; if not Sprinting then return end
+    STAM.Mode = mode
+    if not Sprinting then return end
     if STAM._thread then if coroutine.status(STAM._thread) ~= "dead" then pcall(task.cancel, STAM._thread) end; STAM._thread = nil end
     if mode == "Regular" and STAM.orig then pcall(function() for k, v in pairs(STAM.orig) do if v ~= nil then Sprinting[k] = v end end end)
     elseif mode == "Semi" then pcall(function() Sprinting.MaxStamina=150; Sprinting.StaminaLoss=4; Sprinting.StaminaGain=40; Sprinting.SprintSpeed=28; Sprinting.StaminaLossDisabled=false end)
@@ -440,7 +780,13 @@ task.spawn(function() while not Sprinting do task.wait(0.5) end; STAM.orig = { M
 -- =========================================================
 -- HDT
 -- =========================================================
-local function nearestKillerPart() local mr = getMyRoot(); local pf = Workspace:FindFirstChild("Players"); local kf = pf and pf:FindFirstChild("Killers"); if not mr or not kf then return nil end; local best, bd = nil, math.huge; for _, k in ipairs(kf:GetChildren()) do if k:IsA("Model") then local hrp = k:FindFirstChild("HumanoidRootPart"); local h = k:FindFirstChildOfClass("Humanoid"); if hrp and h and h.Health > 0 then local d = (hrp.Position - mr.Position).Magnitude; if d < bd then best, bd = hrp, d end end end end return best end
+local function nearestKillerPart() 
+    local mr = getMyRoot(); local pf = Workspace:FindFirstChild("Players"); local kf = pf and pf:FindFirstChild("Killers"); if not mr or not kf then return nil end
+    local best, bd = nil, math.huge
+    for _, k in ipairs(kf:GetChildren()) do if k:IsA("Model") then local hrp = k:FindFirstChild("HumanoidRootPart"); local h = k:FindFirstChildOfClass("Humanoid"); if hrp and h and h.Health > 0 then local d = (hrp.Position - mr.Position).Magnitude; if d < bd then best, bd = hrp, d end end end end
+    return best 
+end
+
 local function startDrag(target)
     if not target or not target.Parent then return end; if hasHelplessEffect() then return end
     local char = lp.Character; local hrp = char and char:FindFirstChild("HumanoidRootPart"); local hum = char and char:FindFirstChildOfClass("Humanoid"); if not hrp or not hum then return end
@@ -456,6 +802,7 @@ local function startDrag(target)
         local step = math.min(HDT.Speed * dt, dist - HDT.StopDistance); hrp.CFrame = CFrame.lookAt(mp + delta.Unit * step, flat); hrp.AssemblyLinearVelocity = Vector3.zero; hrp.AssemblyAngularVelocity = Vector3.zero
     end)
 end
+
 HDT = { Enabled=false, AutoTrigger=true, Speed=12, StopDistance=2, DragDuration=2, Cooldown=27, MaxRange=40, _dragId=0, _dragging=false, _conn=nil, _lastFire=0, _cooldownUntil=0 }
 HDT_Trigger = function(force) if not force and not HDT.Enabled then return end; if hasHelplessEffect() or tick() < HDT._cooldownUntil or HDT._dragging or tick() - HDT._lastFire < 0.15 then return end; local target = nearestKillerPart(); if not target then return end; local mr = getMyRoot(); if mr then local d = (target.Position - mr.Position).Magnitude; if d <= HDT.StopDistance + 0.5 or d > HDT.MaxRange then return end end; HDT._lastFire = tick(); startDrag(target) end
 HDT_Auto = function() if not HDT or not HDT.Enabled or not HDT.AutoTrigger then return end; task.spawn(function() pcall(HDT_Trigger, false) end) end
@@ -463,7 +810,8 @@ HDT_Auto = function() if not HDT or not HDT.Enabled or not HDT.AutoTrigger then 
 -- =========================================================
 -- Aim
 -- =========================================================
-local Camera = Workspace.CurrentCamera; Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function() if Workspace.CurrentCamera then Camera = Workspace.CurrentCamera end end)
+local Camera = Workspace.CurrentCamera
+Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function() if Workspace.CurrentCamera then Camera = Workspace.CurrentCamera end end)
 local function safeLookAt(pos, target) if (target - pos).Magnitude < 0.01 then return CFrame.new(pos) end return CFrame.lookAt(pos, target) end
 local AIM = { Enabled=false, AimMode="Camera", Smooth=1, PredictMode="Both", PredictLead=0.25, PingMult=1.5, LockTime=1.5, PredictionStrength=1.0, CurrentAbility=nil, CachedTargetHRP=nil, _aimUntil=0 }
 local PING_ABILITIES = { AimGun=true, GunFire=true, GunExplode=true, GunFail=true }
@@ -534,40 +882,48 @@ RunService.RenderStepped:Connect(function() if not ChanceAimbot.Enabled or not C
 -- =========================================================
 -- Misc
 -- =========================================================
-local Misc_HideInjury = false; local Misc_DisableBlindness = false
-local injuryWasHidden = setmetatable({}, { __mode = "k" }); local blindnessWasHidden = setmetatable({}, { __mode = "k" })
+local Misc_HideInjury = false
+local Misc_DisableBlindness = false
+local injuryWasHidden = setmetatable({}, { __mode = "k" })
+local blindnessWasHidden = setmetatable({}, { __mode = "k" })
+
 local function applyInjuryTo(inst) if inst.Name == "redFlash" or inst.Name == "injuredVignette" then if Misc_HideInjury then pcall(function() inst.Visible = false end); injuryWasHidden[inst] = true elseif injuryWasHidden[inst] then pcall(function() inst.Visible = true end); injuryWasHidden[inst] = nil end elseif inst.Name == "HealthDesaturation" then if Misc_HideInjury then pcall(function() inst.Enabled = false end); injuryWasHidden[inst] = true elseif injuryWasHidden[inst] then pcall(function() inst.Enabled = true end); injuryWasHidden[inst] = nil end end end
 local function applyBlindnessTo(inst) if inst.Name == "BlindnessBlur" and inst:IsA("BlurEffect") then if Misc_DisableBlindness then pcall(function() inst.Enabled = false end); blindnessWasHidden[inst] = true elseif blindnessWasHidden[inst] then pcall(function() inst.Enabled = true end); blindnessWasHidden[inst] = nil end end end
-Lighting.ChildAdded:Connect(applyBlindnessTo); PlayerGui.DescendantAdded:Connect(applyInjuryTo)
+Lighting.ChildAdded:Connect(applyBlindnessTo)
+PlayerGui.DescendantAdded:Connect(applyInjuryTo)
 local function reapplyMisc() for _, v in ipairs(Lighting:GetDescendants()) do applyBlindnessTo(v) end; for _, v in ipairs(PlayerGui:GetDescendants()) do applyInjuryTo(v) end end
 
 -- =========================================================
--- UI (All Tabs Restored)
+-- UI (All Tabs Restored, Full ESP, Low Aimlock)
 -- =========================================================
-local Window = Rayfield:CreateWindow({ name = "SCP Hub", subtitle = "v1.89", sidebarLayout = true, configuration = { autoSave = true, autoLoad = true, fileName = "SCPHub_v189" } })
+local Window = Rayfield:CreateWindow({ 
+    name = "SCP Hub", 
+    subtitle = "v1.94", 
+    sidebarLayout = true, 
+    configuration = { autoSave = true, autoLoad = true, fileName = "SCPHub_v194" } 
+})
 
+-- FULL ESP TAB
 local ESPTab = Window:CreateTab({ name = "ESP", icon = 93364949241311 })
-ESPTab:CreateSection("Killer Chams")
-ESPTab:CreateToggle({ name = "Enabled", default = false, callback = function(v) ESP_CFG.Killers.Enabled = v end })
-ESPTab:CreateToggle({ name = "Name + Distance", default = false, callback = function(v) ESP_CFG.Killers.TextEnabled = v end })
-ESPTab:CreateColorPicker({ name = "Fill Color", color = Color3.fromRGB(255, 40, 40), callback = function(c) ESP_CFG.Killers.FillColor = c end })
-ESPTab:CreateSlider({ name = "Fill Transparency", min = 0, max = 1, default = 0.55, increment = 0.05, callback = function(v) ESP_CFG.Killers.FillTransparency = v end })
-ESPTab:CreateSection("Survivor Chams")
-ESPTab:CreateToggle({ name = "Enabled", default = false, callback = function(v) ESP_CFG.Survivors.Enabled = v end })
-ESPTab:CreateToggle({ name = "Name + Distance", default = false, callback = function(v) ESP_CFG.Survivors.TextEnabled = v end })
-ESPTab:CreateColorPicker({ name = "Fill Color", color = Color3.fromRGB(40, 255, 90), callback = function(c) ESP_CFG.Survivors.FillColor = c end })
-ESPTab:CreateSlider({ name = "Fill Transparency", min = 0, max = 1, default = 0.55, increment = 0.05, callback = function(v) ESP_CFG.Survivors.FillTransparency = v end })
+ESPTab:CreateSection("Killer ESP")
+ESPTab:CreateToggle({ name = "Enable Killers ESP", default = false, callback = function(v) ESP_CFG.Killers.Enabled = v end })
+ESPTab:CreateToggle({ name = "Show Killer Names", default = false, callback = function(v) ESP_CFG.Killers.TextEnabled = v end })
+ESPTab:CreateColorPicker({ name = "Killer ESP Color", color = Color3.fromRGB(255, 40, 40), callback = function(c) ESP_CFG.Killers.FillColor = c end })
+ESPTab:CreateSlider({ name = "Killer ESP Transparency", min = 0, max = 1, default = 0.55, increment = 0.05, callback = function(v) ESP_CFG.Killers.FillTransparency = v end })
+
+ESPTab:CreateSection("Survivor ESP")
+ESPTab:CreateToggle({ name = "Enable Survivors ESP", default = false, callback = function(v) ESP_CFG.Survivors.Enabled = v end })
+ESPTab:CreateToggle({ name = "Show Survivor Names", default = false, callback = function(v) ESP_CFG.Survivors.TextEnabled = v end })
+ESPTab:CreateColorPicker({ name = "Survivor ESP Color", color = Color3.fromRGB(40, 255, 90), callback = function(c) ESP_CFG.Survivors.FillColor = c end })
+ESPTab:CreateSlider({ name = "Survivor ESP Transparency", min = 0, max = 1, default = 0.55, increment = 0.05, callback = function(v) ESP_CFG.Survivors.FillTransparency = v end })
 
 local ABTab = Window:CreateTab({ name = "Auto Block", icon = 93364949241311 })
-ABTab:CreateSection("Instant Name-Match Auto Block")
+ABTab:CreateSection("Auto Block")
 ABTab:CreateToggle({ name = "Enable Auto Block", default = false, callback = function(v) AB_Cfg.Enabled = v end })
 ABTab:CreateToggle({ name = "Animation Trigger", default = true, callback = function(v) AB_Cfg.AnimTrigger = v end })
 ABTab:CreateToggle({ name = "Sound Trigger", default = true, callback = function(v) AB_Cfg.SoundTrigger = v end })
 ABTab:CreateToggle({ name = "Debug Logging", default = false, callback = function(v) AB_Cfg.Debug = v; BLOCK_Cfg.Debug = v; BoxCfg.Debug = v end })
 ABTab:CreateButton({ name = "Block Now", callback = function() print("[AB] manual block:", fireBlockNow()) end })
-ABTab:CreateSection("Behead")
-ABTab:CreateToggle({ name = "Ignore Behead Sounds", default = true, callback = function(v) IGNORE_BEHEAD = v end })
-ABTab:CreateButton({ name = "Mark Last as Behead", callback = function() if _G.SCPHub_LastLoggedID then BEHEAD_IDS[_G.SCPHub_LastLoggedID] = true end end })
 
 local HMT_Tab = Window:CreateTab({ name = "HMT", icon = 93364949241311 })
 HMT_Tab:CreateSection("Hitbox Moving Tech")
@@ -580,8 +936,6 @@ HMT_Tab:CreateSlider({ name = "Max Travel", min = 5, max = 40, default = 20, inc
 HMT_Tab:CreateSlider({ name = "Max Move Time (0.1s)", min = 1, max = 20, default = 6, increment = 1, callback = function(v) HMT.MaxTime = v / 10 end })
 HMT_Tab:CreateSlider({ name = "Hold Frames", min = 1, max = 6, default = 2, increment = 1, callback = function(v) HMT.HoldFrames = v end })
 HMT_Tab:CreateButton({ name = "Test on Nearest Killer", callback = function() local pf = Workspace:FindFirstChild("Players"); local kf = pf and pf:FindFirstChild("Killers"); if not kf then return end; local myRoot = getMyRoot(); local best, bd = nil, math.huge; for _, k in ipairs(kf:GetChildren()) do if k:IsA("Model") then local hrp = k:FindFirstChild("HumanoidRootPart"); if hrp and myRoot then local d = (hrp.Position - myRoot.Position).Magnitude; if d < bd then bd = d; best = k end end end end; if best then hmtStart(best, nil) end end })
-HMT_Tab:CreateSection("Notes")
-pcall(function() HMT_Tab:CreateLabel("HMT moves your hitbox into the killer's attack hitbox.") end)
 
 local BoxTab = Window:CreateTab({ name = "Box", icon = 93364949241311 })
 BoxTab:CreateSection("Box Settings")
@@ -590,7 +944,7 @@ BoxTab:CreateDropdown({ name = "Appear Mode", options = { "M1", "Always" }, defa
 BoxTab:CreateColorPicker({ name = "Box Color", color = Color3.fromRGB(255, 60, 60), callback = function(c) BoxCfg.Color = c end })
 BoxTab:CreateSlider({ name = "Transparency", min = 0, max = 1, default = 0.3, increment = 0.05, callback = function(v) BoxCfg.Transparency = v end })
 BoxTab:CreateToggle({ name = "Debug Logging", default = false, callback = function(v) BoxCfg.Debug = v end })
-BoxTab:CreateButton({ name = "Test Box (nearest killer)", callback = function() local pf = Workspace:FindFirstChild("Players"); local kf = pf and pf:FindFirstChild("Killers"); if not kf then return end; local myRoot = getMyRoot(); local best, bd = nil, math.huge; for _, k in ipairs(kf:GetChildren()) do if k:IsA("Model") then local hrp = k:FindFirstChild("HumanoidRootPart"); if hrp and myRoot then local d = (hrp.Position - myRoot.Position).Magnitude; if d < bd then bd = d; best = k end end end end; if best then spawnM1Boxes(best, "test-button", nil) end end })
+BoxTab:CreateButton({ name = "Test Box (nearest killer)", callback = function() local pf = Workspace:FindFirstChild("Players"); local kf = pf and pf:FindFirstChild("Killers"); if not kf then return end; local myRoot = getMyRoot(); local best, bd = nil, math.huge; for _, k in ipairs(kf:GetChildren()) do if k:IsA("Model") then local hrp = k:FindFirstChild("HumanoidRootPart"); if hrp and myRoot then local d = (hrp.Position - myRoot.Position).Magnitude; if d < bd then bd = d; best = k end end end end; if best then spawnM1Boxes(best, nil) end end })
 BoxTab:CreateSection("M1 Boxes (transient)")
 BoxTab:CreateSlider({ name = "Boxes per M1", min = 1, max = 10, default = 1, increment = 1, callback = function(v) BoxCfg.M1Boxes = v end })
 BoxTab:CreateSlider({ name = "Spread", min = 0, max = 20, default = 3, increment = 1, callback = function(v) BoxCfg.M1Spread = v end })
@@ -604,7 +958,7 @@ local GenTab = Window:CreateTab({ name = "Gen", icon = 93364949241311 })
 GenTab:CreateSection("Auto Generator")
 GenTab:CreateToggle({ name = "Enable Auto Gen", default = false, callback = function(v) AUTOGEN.Enabled = v; autogenLoop() end })
 GenTab:CreateSlider({ name = "Range", min = 5, max = 30, default = 10, increment = 1, callback = function(v) AUTOGEN.MaxDistance = v end })
-GenTab:CreateSlider({ name = "Interval", min = 1, max = 5, default = 1, increment = 1, callback = function(v) AUTOGEN.Interval = v end })
+GenTab:CreateSlider({ name = "Interval (s)", min = 1, max = 5, default = 3, increment = 1, callback = function(v) AUTOGEN.Interval = v end })
 GenTab:CreateSection("Puzzle Types")
 GenTab:CreateToggle({ name = "Memory Match", default = true, callback = function(v) AUTOGEN.MemoryEnabled = v end })
 GenTab:CreateToggle({ name = "Gear (rotate)", default = true, callback = function(v) AUTOGEN.GearEnabled = v end })
@@ -635,7 +989,7 @@ AimTab:CreateSection("Survivor Stun Aim")
 AimTab:CreateToggle({ name = "Enabled", default = false, callback = function(v) AIM.Enabled = v end })
 AimTab:CreateToggle({ name = "Aim on Stun", default = true, callback = function(v) AbilityHook.Enabled = v end })
 AimTab:CreateDropdown({ name = "Aim Mode", options = {"Camera","HRP","HRP+Camera"}, default = "Camera", callback = function(v) AIM.AimMode = v end })
-AimTab:CreateSlider({ name = "Lock Time (0.1s steps)", min = 3, max = 50, default = 15, increment = 1, callback = function(v) AIM.LockTime = v / 10 end })
+AimTab:CreateSlider({ name = "Lock Time (s)", min = 0.1, max = 3.0, default = 1.5, increment = 0.1, callback = function(v) AIM.LockTime = v end })
 AimTab:CreateSection("Prediction")
 AimTab:CreateDropdown({ name = "Prediction Mode", options = {"Off","Ping","Velocity","Both"}, default = "Both", callback = function(v) AIM.PredictMode = v end })
 AimTab:CreateSlider({ name = "Velocity Lead (0.01s)", min = 0, max = 50, default = 25, increment = 1, callback = function(v) AIM.PredictLead = v / 100 end })
@@ -643,7 +997,7 @@ AimTab:CreateSlider({ name = "Ping Multiplier (x10)", min = 0, max = 20, default
 AimTab:CreateSlider({ name = "Prediction Strength (x10)", min = 5, max = 30, default = 10, increment = 1, callback = function(v) AIM.PredictionStrength = v / 10 end })
 AimTab:CreateSection("Chance Aimlock")
 AimTab:CreateToggle({ name = "Enable", default = false, callback = function(v) ChanceAimbot.Enabled = v; if v then chanceInitialScan() else ChanceAimbot._isLocking = false; for conn in pairs(ChanceAimbot._conns) do pcall(function() conn:Disconnect() end) end; ChanceAimbot._conns = setmetatable({}, { __mode = "k" }); ChanceAimbot._hooked = setmetatable({}, { __mode = "k" }) end end })
-AimTab:CreateSlider({ name = "Lock Time (0.1s)", min = 3, max = 30, default = 10, increment = 1, callback = function(v) ChanceAimbot.LockTime = v / 10 end })
+AimTab:CreateSlider({ name = "Lock Time (s)", min = 0.1, max = 3.0, default = 1.0, increment = 0.1, callback = function(v) ChanceAimbot.LockTime = v end })
 AimTab:CreateSlider({ name = "Prediction Min (x10)", min = 0, max = 100, default = 20, increment = 1, callback = function(v) ChanceAimbot.PredMin = v / 10 end })
 AimTab:CreateSlider({ name = "Prediction Max (x10)", min = 0, max = 150, default = 30, increment = 1, callback = function(v) ChanceAimbot.PredMax = v / 10 end })
 AimTab:CreateSlider({ name = "Turn Lead (x10)", min = 0, max = 30, default = 10, increment = 1, callback = function(v) ChanceAimbot.TurnLeadMult = v / 10 end })
@@ -660,4 +1014,4 @@ MiscTab:CreateButton({ name = "Reset Character", callback = function() local h =
 
 _G.SCPHubInput = UIS.InputBegan:Connect(function(input, gpe) if gpe then return end; if input.KeyCode == Enum.KeyCode.Q then pcall(function() HDT_Trigger(true) end) end end)
 
-Window:Notify({ title = "SCP Hub", content = "Loaded · v1.89 · Instant Name-Match Block", duration = 3 })
+Window:Notify({ title = "SCP Hub", content = "Loaded · v1.94 · Final Polish", duration = 3 })

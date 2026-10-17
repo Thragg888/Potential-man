@@ -1,4 +1,4 @@
--- SCP Hub v1.84 — Box fixed · sound+anim M1 trigger · own folder · debug · BUGFIX PASS
+-- SCP Hub v1.86 — HMT + full bugfix pass + puzzle-aware autogen
 repeat task.wait() until game:IsLoaded()
 
 -- =========================================================
@@ -14,6 +14,9 @@ local TweenService      = game:GetService("TweenService")
 local Debris            = game:GetService("Debris")
 local Lighting          = game:GetService("Lighting")
 local TextChatService   = game:GetService("TextChatService")
+local VIM               = game:GetService("VirtualInputManager")
+
+local unpack_ = table.unpack or unpack
 
 local lp = Players.LocalPlayer
 local PlayerGui = lp:FindFirstChildOfClass("PlayerGui") or lp:WaitForChild("PlayerGui", 15)
@@ -22,13 +25,17 @@ if not PlayerGui then
     PlayerGui = lp:FindFirstChildOfClass("PlayerGui")
 end
 
--- Re-run safety: unbind render-step, disconnect global input
-pcall(function()
-    if _G.SCPHubInput then _G.SCPHubInput:Disconnect(); _G.SCPHubInput = nil end
-end)
+pcall(function() if _G.SCPHubInput then _G.SCPHubInput:Disconnect(); _G.SCPHubInput = nil end end)
 pcall(RunService.UnbindFromRenderStep, RunService, "SCPHubAim")
 
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/gen2"))()
+
+-- =========================================================
+-- Forward declarations (must exist before consumers)
+-- =========================================================
+local HDT              -- HDT table (assigned in HDT section)
+local HDT_Trigger      -- HDT trigger function (assigned in HDT section)
+local HDT_Auto         -- HDT auto-after-block callback (assigned in HDT section)
 
 -- =========================================================
 -- Game bootstrap
@@ -85,15 +92,18 @@ local function getMyHb()
 end
 local function isSurvivor() return getMyRole() == "Survivors" end
 
+-- FIX 1: dead-state guard prevents blocks on corpses
 local function hasHelplessEffect()
     local char = lp.Character
     if not char then return true end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health <= 0 then return true end
+    if hum:GetState() == Enum.HumanoidStateType.Dead then return true end
     if char:GetAttribute("Helpless") then return true end
     if char:GetAttribute("Grabbed") then return true end
     if char:GetAttribute("Incapacitated") then return true end
     if char:GetAttribute("BeingCarried") then return true end
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if hum and hum.PlatformStand then
+    if hum.PlatformStand then
         local hrp = char:FindFirstChild("HumanoidRootPart")
         if hrp and hrp.AssemblyLinearVelocity.Magnitude < 2 then return true end
     end
@@ -157,6 +167,11 @@ local M1_BLOCKLIST = {
 local function normalizeName(name)
     return tostring(name or ""):lower():gsub("%s", ""):gsub("_", ""):gsub("%-", "")
 end
+
+-- OPT D: precompiled lookup
+local BLOCK_KW_SET = {}
+for _, kw in ipairs(M1_BLOCKLIST) do BLOCK_KW_SET[kw] = true end
+
 local function isM1Name(name)
     if not name or name == "" then return false end
     local lname = normalizeName(name)
@@ -170,10 +185,6 @@ local function isM1Name(name)
     return false
 end
 
--- ---------------------------------------------------------
--- BUGFIX #8: M1 hitbox size was ~17x19x18 studs (over-triggering).
--- Reduction: base scale 1.4 + 1 stud per-axis buffer.
--- ---------------------------------------------------------
 local M1_HITBOX_SIZE = Vector3.new(5.2, 6, 5.65)
 local M1_HITBOX_OFFSET = CFrame.new(0, 0, -3.5)
 local M1_SCALE = 1.4
@@ -189,7 +200,7 @@ local function getM1HitboxSize(attackType)
 end
 
 -- =========================================================
--- Animation map (M1 + non-M1 hard-block list)
+-- Animation map
 -- =========================================================
 local ATTACK_ANIM_MAP  = {}
 local NON_M1_ANIM_IDS  = {}
@@ -204,6 +215,7 @@ local function collectAnimEntries(v, out)
     end
 end
 
+-- FIX 2: normalizeName so custom hitboxes (golem) apply
 local function buildAttackAnimMap()
     local assets = ReplicatedStorage:FindFirstChild("Assets"); if not assets then return end
     local killers = assets:FindFirstChild("Killers"); if not killers then return end
@@ -215,7 +227,7 @@ local function buildAttackAnimMap()
                 local anims = data.Animations or (data.Config and data.Config.Animations)
                 if type(anims) == "table" then
                     for abilityName, animValue in pairs(anims) do
-                        local lname = tostring(abilityName):lower()
+                        local lname = normalizeName(abilityName)
                         local ids = {}
                         collectAnimEntries(animValue, ids)
                         if isM1Name(lname) then
@@ -230,7 +242,6 @@ local function buildAttackAnimMap()
     end
 end
 
--- BUGFIX #6: call synchronously once before hooks are installed, then refresh async.
 buildAttackAnimMap()
 task.spawn(function() while true do task.wait(30); pcall(buildAttackAnimMap) end end)
 
@@ -266,7 +277,7 @@ local function getActiveM1(model)
 end
 
 -- =========================================================
--- Block firing
+-- Block firing (FIX 3: cached paths validate success)
 -- =========================================================
 local BlockButton = nil
 local function getBlockButton()
@@ -290,17 +301,15 @@ local function fireBlock()
 
     if BLOCK_METHOD == "signal" and SIGNAL_AVAILABLE then
         local btn = getBlockButton()
-        if btn then
-            pcall(firesignalF, btn.MouseButton1Click)
-            if BLOCK_Cfg.Debug then print("[AB] fired via signal") end
+        if btn and pcall(firesignalF, btn.MouseButton1Click) then
+            if BLOCK_Cfg.Debug then print("[AB] fired via signal (cached)") end
             return true
         end
         BLOCK_METHOD = nil
     end
     if BLOCK_METHOD == "remote" then
-        if RemoteEvent then
-            pcall(function() RemoteEvent:FireServer("UseActorAbility", {BLOCK_BUF}) end)
-            if BLOCK_Cfg.Debug then print("[AB] fired via remote") end
+        if RemoteEvent and pcall(function() RemoteEvent:FireServer("UseActorAbility", {BLOCK_BUF}) end) then
+            if BLOCK_Cfg.Debug then print("[AB] fired via remote (cached)") end
             return true
         end
         BLOCK_METHOD = nil
@@ -354,13 +363,9 @@ local function ensureBoxFolder()
     return f
 end
 
--- BUGFIX #9: per-killer cooldown so sound + anim don't double-spawn boxes
 local lastBoxSpawn = setmetatable({}, { __mode = "k" })
 local M1_BOX_COOLDOWN = 0.1
 
--- =========================================================
--- M1 transient boxes
--- =========================================================
 local function spawnM1Boxes(killer, reason, attackType)
     if not killer or not killer.Parent then return end
     local qh = killer:FindFirstChild("QueryHitbox")
@@ -368,11 +373,8 @@ local function spawnM1Boxes(killer, reason, attackType)
         if BoxCfg.Debug then print("[Box] no QueryHitbox for", killer.Name) end
         return
     end
-
     local now = tick()
-    if lastBoxSpawn[killer] and now - lastBoxSpawn[killer] < M1_BOX_COOLDOWN then
-        return
-    end
+    if lastBoxSpawn[killer] and now - lastBoxSpawn[killer] < M1_BOX_COOLDOWN then return end
     lastBoxSpawn[killer] = now
 
     local folder = ensureBoxFolder()
@@ -407,9 +409,6 @@ local function spawnM1Boxes(killer, reason, attackType)
     end
 end
 
--- =========================================================
--- Always-on long boxes
--- =========================================================
 local function destroyLongBox(killer)
     local d = BoxCfg.Long[killer]; if not d then return end
     if d.part and d.part.Parent then pcall(function() d.part:Destroy() end) end
@@ -433,7 +432,6 @@ end
 local function createLongBox(killer)
     if not killer or not killer:IsA("Model") then return end
     destroyLongBox(killer)
-
     local folder = ensureBoxFolder()
     local part = Instance.new("Part")
     part.Name = "SCPHubLong_" .. killer.Name
@@ -485,7 +483,6 @@ local function createLongBox(killer)
             hl.OutlineTransparency = show and 0 or 1
         end
     end)
-
     if BoxCfg.Debug then print("[Box] long box created for", killer.Name) end
 end
 
@@ -509,14 +506,13 @@ local function ensureBoxes()
 end
 
 -- =========================================================
--- M1 hooks — sound + anim both trigger boxes
+-- M1 hooks
 -- =========================================================
 local killerM1Conns = setmetatable({}, { __mode = "k" })
 local function hookKillerForM1(killer)
     if not killer or not killer:IsA("Model") then return end
     if killerM1Conns[killer] then return end
 
-    -- BUGFIX #3: track and clean up on killer destruction
     local cleanup
     cleanup = killer.Destroying:Connect(function()
         local c = killerM1Conns[killer]
@@ -558,6 +554,25 @@ local AB_Cfg = {
     AnimTrigger = true,
     MaxDistance = 25,
     Debug = false,
+}
+
+-- =========================================================
+-- HMT — Hitbox Moving Tech
+-- =========================================================
+local HMT = {
+    Enabled = false,
+    Speed = 13,
+    TriggerRange = 30,
+    MaxTravel = 20,
+    MaxTime = 0.6,
+    HoldFrames = 2,
+    SnapBack = true,
+    Debug = false,
+    _active = false,
+    _thread = nil,
+    _savedCF = nil,
+    _savedVel = nil,
+    _savedAng = nil,
 }
 
 local HB_PART = Instance.new("Part")
@@ -609,23 +624,172 @@ local function isInM1Hitbox(killer, attackType)
     return false
 end
 
+-- FIX 4: return false when HMT busy (was `return true`, blocked classic AB fallback)
+local function hmtStart(killer, attackType)
+    if not HMT.Enabled then return false end
+    if HMT._active then return false end
+    if not killer or not killer.Parent then return false end
+    if not isSurvivor() or hasHelplessEffect() then return false end
+
+    local char = lp.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if not hrp or not hum then return false end
+
+    if isInM1Hitbox(killer, attackType) then
+        fireBlock()
+        if HMT.Debug then print("[HMT] already in range — blocked") end
+        return true
+    end
+
+    local kh = killer:FindFirstChild("HumanoidRootPart")
+    local qh = killer:FindFirstChild("QueryHitbox")
+    if not kh or not qh then return false end
+    local dist = (kh.Position - hrp.Position).Magnitude
+    if dist > HMT.TriggerRange then return false end
+
+    local custom = attackType and CUSTOM_HITBOXES[attackType]
+    local offset = custom and custom.Offset or M1_HITBOX_OFFSET
+    local targetPos = (qh.CFrame * offset).Position
+    local flat = Vector3.new(targetPos.X, hrp.Position.Y, targetPos.Z)
+    local travelDist = (flat - hrp.Position).Magnitude
+    local expectedTime = travelDist / math.max(HMT.Speed, 1)
+    if expectedTime > HMT.MaxTime then
+        if HMT.Debug then
+            print(string.format("[HMT] too far (%.1f st / %.2fs) — skip", travelDist, expectedTime))
+        end
+        return false
+    end
+
+    HMT._active = true
+    HMT._savedCF  = hrp.CFrame
+    HMT._savedVel = hrp.AssemblyLinearVelocity
+    HMT._savedAng = hrp.AssemblyAngularVelocity
+
+    local savedWalk = hum.WalkSpeed
+    hum.WalkSpeed = 0
+
+    -- FIX 5: pcall + guaranteed cleanup
+    HMT._thread = task.spawn(function()
+        local start    = tick()
+        local traveled = 0
+        local lastPos  = hrp.Position
+        local blocked  = false
+        local savedCF  = HMT._savedCF
+        local savedVel = HMT._savedVel
+        local savedAng = HMT._savedAng
+
+        local ok, err = pcall(function()
+            while HMT._active and tick() - start < HMT.MaxTime do
+                if not killer.Parent or not hrp.Parent or hasHelplessEffect() then break end
+
+                if isInM1Hitbox(killer, attackType) then
+                    fireBlock(); blocked = true
+                    if HMT.Debug then
+                        print(string.format("[HMT] reached in %.0fms", (tick() - start) * 1000))
+                    end
+                    break
+                end
+
+                local qh2 = killer:FindFirstChild("QueryHitbox")
+                if not qh2 then break end
+                local cust2 = attackType and CUSTOM_HITBOXES[attackType]
+                local off2  = cust2 and cust2.Offset or M1_HITBOX_OFFSET
+                local tgt   = (qh2.CFrame * off2).Position
+
+                local myPos = hrp.Position
+                local flat2 = Vector3.new(tgt.X, myPos.Y, tgt.Z)
+                local delta = flat2 - myPos
+                if delta.Magnitude < 0.5 then break end
+
+                local step = math.min(HMT.Speed * 0.03, delta.Magnitude)
+                local newPos = myPos + delta.Unit * step
+
+                if AB_Cfg.WallCheck then
+                    local wp = RaycastParams.new()
+                    wp.FilterType = Enum.RaycastFilterType.Exclude
+                    wp.FilterDescendantsInstances = { lp.Character, killer }
+                    if Workspace:Raycast(myPos, newPos - myPos, wp) then
+                        if HMT.Debug then print("[HMT] wall in path — stop") end
+                        break
+                    end
+                end
+
+                hrp.CFrame = CFrame.lookAt(newPos, flat2)
+                hrp.AssemblyLinearVelocity  = Vector3.zero
+                hrp.AssemblyAngularVelocity = Vector3.zero
+
+                traveled = traveled + (newPos - lastPos).Magnitude
+                lastPos  = newPos
+                if traveled > HMT.MaxTravel then
+                    if HMT.Debug then print("[HMT] MaxTravel cap") end
+                    break
+                end
+
+                task.wait(0.03)
+            end
+
+            if not blocked and hrp.Parent and killer.Parent
+               and isInM1Hitbox(killer, attackType) then
+                fireBlock(); blocked = true
+                if HMT.Debug then print("[HMT] block on final check") end
+            end
+
+            if blocked then
+                for _ = 1, HMT.HoldFrames do task.wait() end
+            end
+        end)
+
+        if not ok and HMT.Debug then
+            warn("[HMT] thread error:", err)
+        end
+
+        if HMT.SnapBack and hrp and hrp.Parent then
+            pcall(function()
+                hrp.CFrame = savedCF
+                hrp.AssemblyLinearVelocity  = savedVel
+                hrp.AssemblyAngularVelocity = savedAng
+            end)
+        end
+        if hum and hum.Parent then
+            pcall(function() hum.WalkSpeed = savedWalk end)
+        end
+        HMT._active    = false
+        HMT._thread    = nil
+        HMT._savedCF   = nil
+        HMT._savedVel  = nil
+        HMT._savedAng  = nil
+        if HMT.Debug and not blocked then print("[HMT] gave up without block") end
+    end)
+    return true
+end
+
 local function tryBlockFromAttack(killer, attackType)
-    if not AB_Cfg.Enabled then return end
     if not killer or not killer.Parent then return end
     if not isSurvivor() then return end
     if hasHelplessEffect() then return end
+    if not AB_Cfg.Enabled and not HMT.Enabled then return end
 
     local mr = getMyRoot()
     local kh = killer:FindFirstChild("HumanoidRootPart")
     if not mr or not kh then return end
-    if (kh.Position - mr.Position).Magnitude > AB_Cfg.MaxDistance then return end
-    if not isInM1Hitbox(killer, attackType) then return end
+    local dist = (kh.Position - mr.Position).Magnitude
 
+    if HMT.Enabled and dist <= HMT.TriggerRange then
+        if hmtStart(killer, attackType) then return end
+    end
+
+    if not AB_Cfg.Enabled then return end
+    if dist > AB_Cfg.MaxDistance then return end
+    if not isInM1Hitbox(killer, attackType) then return end
     if AB_Cfg.WallCheck then
         RAY_LOS.FilterDescendantsInstances = { lp.Character, killer }
         if Workspace:Raycast(mr.Position, kh.Position - mr.Position, RAY_LOS) then return end
     end
-    fireBlock()
+    -- FIX 8: wire HDT AutoTrigger after a successful block (uses forward-declared callback)
+    if fireBlock() then
+        if HDT_Auto then HDT_Auto() end
+    end
 end
 
 local killerAttackConns = setmetatable({}, { __mode = "k" })
@@ -633,7 +797,6 @@ local function hookKillerForAttack(killer)
     if not killer or not killer:IsA("Model") then return end
     if killerAttackConns[killer] then return end
 
-    -- BUGFIX #3: track and clean up on killer destruction
     local cleanup
     cleanup = killer.Destroying:Connect(function()
         local c = killerAttackConns[killer]
@@ -647,7 +810,8 @@ local function hookKillerForAttack(killer)
         local animator = hum and hum:FindFirstChildOfClass("Animator")
         if not animator then return false end
         killerAttackConns[killer] = animator.AnimationPlayed:Connect(function(track)
-            if not AB_Cfg.Enabled or not AB_Cfg.AnimTrigger then return end
+            if not (AB_Cfg.Enabled or HMT.Enabled) then return end
+            if not AB_Cfg.AnimTrigger then return end
             local attackType = resolveM1Anim(track)
             if not attackType then return end
             task.spawn(tryBlockFromAttack, killer, attackType)
@@ -671,10 +835,12 @@ local IGNORE_BEHEAD = true
 local LOG_IDS = false
 _G.SCPHub_LastLoggedID = nil
 
+-- OPT D applied
 local function soundNameIsBlocked(sound)
     local n = normalizeName(sound.Name)
     if n == "" then return false end
-    for _, kw in ipairs(M1_BLOCKLIST) do
+    if BLOCK_KW_SET[n] then return true end
+    for kw in pairs(BLOCK_KW_SET) do
         if n:find(kw, 1, true) then return true end
     end
     return false
@@ -723,14 +889,17 @@ local function onSoundTrigger(sound)
     _G.SCPHub_LastLoggedID = id
     if LOG_IDS then print("[SCP Hub] Sound: " .. id .. " | Killer: " .. killer.Name) end
 
+    local atk = getActiveM1(killer)
+
     if BoxCfg.Enabled and BoxCfg.AppearMode == "M1" then
-        local atk = getActiveM1(killer)
         spawnM1Boxes(killer, "sound:" .. id, atk)
     end
 
-    if not AB_Cfg.Enabled or not AB_Cfg.SoundTrigger then return end
+    if not (AB_Cfg.Enabled or HMT.Enabled) then return end
+    if not AB_Cfg.SoundTrigger then return end
     if not isSurvivor() or hasHelplessEffect() then return end
-    local attackType = getActiveM1(killer) or "SoundFallback"
+
+    local attackType = atk or "SoundFallback"
     task.spawn(tryBlockFromAttack, killer, attackType)
 end
 local function hookSound(sound)
@@ -779,7 +948,7 @@ task.spawn(function()
 end)
 
 -- =========================================================
--- ESP — Chams + Text
+-- ESP
 -- =========================================================
 local ESP_CFG = {
     Killers   = { Enabled=true, TextEnabled=true, FillColor=Color3.fromRGB(255,40,40),
@@ -795,8 +964,11 @@ local function espClear(m)
     ESP_TRACK[m] = nil
 end
 
-local function espEnsure(m, cfg, isKiller)
+-- FIX: myHrp passed in as param (OPT C), skip dead models
+local function espEnsure(m, cfg, isKiller, myHrp)
     if not m or not m.Parent then espClear(m); return end
+    local hum = m:FindFirstChildOfClass("Humanoid")
+    if hum and hum.Health <= 0 then espClear(m); return end
     local t = ESP_TRACK[m]; if not t then t = {}; ESP_TRACK[m] = t end
     if t.Chams and not t.Chams.Parent then t.Chams = nil end
 
@@ -838,13 +1010,12 @@ local function espEnsure(m, cfg, isKiller)
             t.Label = lbl
         end
         local hrp = m:FindFirstChild("HumanoidRootPart")
-        local myHrp = getMyRoot()
         local dist = 0
         if hrp and myHrp then
             dist = math.floor((hrp.Position - myHrp.Position).Magnitude)
         end
         t.Label.Text = string.format("%s %s [%d]", isKiller and "[K]" or "[S]", m.Name, dist)
-        t.Label.TextColor3 = cfg.FillColor
+        t.Label.TextColor = cfg.FillColor
     elseif t.Billboard then
         pcall(function() t.Billboard:Destroy() end)
         t.Billboard = nil; t.Label = nil
@@ -862,21 +1033,23 @@ local function espCollectFromFolder(folder)
     return out
 end
 
+-- OPT C: throttled loop, myHrp cached per tick
 task.spawn(function()
     while true do
-        task.wait(0.2)
+        task.wait(0.3)
         pcall(function()
             local pf = Workspace:FindFirstChild("Players")
             local kf = pf and pf:FindFirstChild("Killers")
             local sf = pf and pf:FindFirstChild("Survivors")
+            local myHrp = getMyRoot()
             if ESP_CFG.Killers.Enabled then
                 for _, m in ipairs(espCollectFromFolder(kf)) do
-                    if not isLocalPlayerChar(m) then espEnsure(m, ESP_CFG.Killers, true) end
+                    if not isLocalPlayerChar(m) then espEnsure(m, ESP_CFG.Killers, true, myHrp) end
                 end
             end
             if ESP_CFG.Survivors.Enabled then
                 for _, m in ipairs(espCollectFromFolder(sf)) do
-                    if not isLocalPlayerChar(m) then espEnsure(m, ESP_CFG.Survivors, false) end
+                    if not isLocalPlayerChar(m) then espEnsure(m, ESP_CFG.Survivors, false, myHrp) end
                 end
             end
             for m in pairs(ESP_TRACK) do
@@ -887,47 +1060,479 @@ task.spawn(function()
 end)
 
 -- =========================================================
--- Auto Gen
+-- AUTO GEN (puzzle-aware: memory / gear / skill check / basic)
 -- =========================================================
-local AUTOGEN = { Enabled=false, Interval=1, MaxDistance=10, _thread=nil }
+local AUTOGEN = {
+    Enabled = false,
+    Interval = 1,
+    MaxDistance = 10,
+    _thread = nil,
+    Debug = false,
+    SkillCheckEnabled = true,
+    SkillCheckSpamMode = false,
+    MemoryEnabled = true,
+    GearEnabled = true,
+    RotateDirection = 1,
+    _lastBasicFire = 0,
+    _lastGenTouch = 0,
+    _lastGenQuery = 0,
+    _cachedGens = {},
+}
+
 local function getIngameMap()
     local map = Workspace:FindFirstChild("Map")
     map = map and map:FindFirstChild("Ingame")
     return map and map:FindFirstChild("Map")
 end
-local function autogenFireOnce()
-    local map = getIngameMap(); local mr = getMyRoot()
-    if not map or not mr then return end
-    local pos = mr.Position
-    local gens
+
+-- === Generic interaction layer ===
+local function fireInteraction(obj, args)
+    if not obj or not obj.Parent then return false end
+    local fired = false
+
+    local pp = obj:FindFirstChildWhichIsA("ProximityPrompt", true)
+    if pp and type(fireproximityprompt) == "function" then
+        pcall(fireproximityprompt, pp); fired = true
+    end
+
+    local cd = obj:FindFirstChildWhichIsA("ClickDetector", true)
+    if cd and type(fireclickdetector) == "function" then
+        pcall(fireclickdetector, cd); fired = true
+    end
+
+    for _, fname in ipairs({"Remotes", "RemoteEvents", "Events", "Remote"}) do
+        local folder = obj:FindFirstChild(fname)
+        if folder then
+            for _, re in ipairs(folder:GetChildren()) do
+                if re:IsA("RemoteEvent") then
+                    if args then
+                        pcall(function() re:FireServer(unpack_(args)) end)
+                    else
+                        pcall(function() re:FireServer() end)
+                    end
+                    fired = true
+                end
+            end
+        end
+    end
+
+    local re = obj:FindFirstChildWhichIsA("RemoteEvent")
+    if re then
+        if args then
+            pcall(function() re:FireServer(unpack_(args)) end)
+        else
+            pcall(function() re:FireServer() end)
+        end
+        fired = true
+    end
+    return fired
+end
+
+-- === SKILL CHECK (DBD style) — UI polling with cache ===
+local SKILL_UI = { ui = nil, lastScan = 0, lastPress = 0 }
+
+local function findSkillCheckUI()
+    if SKILL_UI.ui and SKILL_UI.ui.Parent and SKILL_UI.ui.Visible then
+        return SKILL_UI.ui
+    end
+    SKILL_UI.ui = nil
+    local now = tick()
+    if now - SKILL_UI.lastScan < 0.04 then return nil end
+    SKILL_UI.lastScan = now
+    if not PlayerGui then return nil end
+    for _, sg in ipairs(PlayerGui:GetChildren()) do
+        if sg:IsA("ScreenGui") and sg.Enabled then
+            for _, d in ipairs(sg:GetDescendants()) do
+                if d:IsA("GuiObject") and d.Visible then
+                    local n = normalizeName(d.Name)
+                    if n:find("skillcheck", 1, true)
+                       or n:find("needle", 1, true)
+                       or (n:find("skill", 1, true) and n:find("check", 1, true)) then
+                        SKILL_UI.ui = d
+                        return d
+                    end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function pressSkillKey()
+    local now = tick()
+    if now - SKILL_UI.lastPress < 0.05 then return end
+    SKILL_UI.lastPress = now
+    pcall(function()
+        VIM:SendKeyEvent(true,  Enum.KeyCode.Space, false, game)
+        task.wait(0.03)
+        VIM:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
+    end)
+end
+
+local function handleSkillCheck()
+    local ui = findSkillCheckUI()
+    if not ui then return false end
+
+    if AUTOGEN.SkillCheckSpamMode then
+        pressSkillKey()
+        return true
+    end
+
+    local needle, zone
+    for _, d in ipairs(ui:GetDescendants()) do
+        local n = normalizeName(d.Name)
+        if not needle and (n:find("needle") or n:find("pointer") or n:find("marker")) then
+            needle = d
+        end
+        if not zone and (n:find("zone") or n:find("target") or n:find("success") or n:find("hit")) then
+            zone = d
+        end
+    end
+
+    if needle and zone then
+        -- Circular skillcheck (rotation-based)
+        if needle.Rotation ~= nil and zone.Rotation ~= nil then
+            local nr = needle.Rotation % 360
+            local zr = zone.Rotation % 360
+            local zs = (zone.Size and math.abs(zone.Size.X.Scale * 360)) or 30
+            local diff = math.abs((nr - zr + 180) % 360 - 180)
+            if diff <= math.max(zs / 2, 8) then pressSkillKey() end
+            return true
+        end
+        -- Bar skillcheck (position-based)
+        if needle.AbsolutePosition and zone.AbsolutePosition then
+            local np = needle.AbsolutePosition.X + needle.AbsoluteSize.X / 2
+            local zp = zone.AbsolutePosition.X
+            local zw = zone.AbsoluteSize.X
+            if np >= zp and np <= zp + zw then pressSkillKey() end
+            return true
+        end
+    end
+
+    local btn = ui:FindFirstChildWhichIsA("TextButton", true)
+             or ui:FindFirstChildWhichIsA("ImageButton", true)
+    if btn and SIGNAL_AVAILABLE then
+        pcall(firesignalF, btn.MouseButton1Click)
+        return true
+    end
+
+    -- Unknown structure: fire but log
+    if AUTOGEN.Debug then print("[AG] skill check: unknown structure, pressing Space") end
+    pressSkillKey()
+    return true
+end
+
+-- === PUZZLE TYPE DETECTION ===
+local PUZZLE_TYPE_CACHE = setmetatable({}, { __mode = "k" })
+
+local function getPuzzleType(gen)
+    if not gen or not gen.Parent then return "unknown" end
+    local cached = PUZZLE_TYPE_CACHE[gen]
+    if cached and tick() - cached.time < 5 then return cached.type end
+
+    -- explicit attribute
+    local attr = gen:GetAttribute("PuzzleType") or gen:GetAttribute("Puzzle")
+    if attr then
+        local n = normalizeName(tostring(attr))
+        local result
+        if n:find("memory") then result = "memory"
+        elseif n:find("gear") then result = "gear"
+        elseif n:find("skill") or n:find("dbd") then result = "skillcheck"
+        elseif n:find("basic") or n:find("simple") then result = "basic" end
+        if result then
+            PUZZLE_TYPE_CACHE[gen] = { type = result, time = tick() }
+            return result
+        end
+    end
+
+    local hasGear, hasCard, hasSkillMarker = false, false, false
+    for _, d in ipairs(gen:GetDescendants()) do
+        local n = normalizeName(d.Name)
+        if not hasGear and (n:find("gear") or n:find("cog") or n:find("wheel") or n:find("ratchet")) then
+            hasGear = true
+        end
+        if not hasCard and (n:find("card") or n:find("memory") or n:find("tile") or n:find("match")) then
+            hasCard = true
+        end
+        if not hasSkillMarker and (n:find("skillcheck") or n:find("needle")) then
+            hasSkillMarker = true
+        end
+        if hasGear and hasCard and hasSkillMarker then break end
+    end
+
+    local result
+    if hasGear then result = "gear"
+    elseif hasCard then result = "memory"
+    elseif hasSkillMarker then result = "skillcheck"
+    else result = "basic" end
+
+    PUZZLE_TYPE_CACHE[gen] = { type = result, time = tick() }
+    return result
+end
+
+-- === MEMORY MATCH ===
+local MEMORY = { Known = {}, LastClick = 0, ClickCooldown = 0.35 }
+
+local function isCardLike(obj)
+    if not (obj:IsA("Model") or obj:IsA("BasePart")) then return false end
+    local n = normalizeName(obj.Name)
+    if n:find("card", 1, true) or n:find("tile", 1, true)
+       or n:find("memory", 1, true) or n:find("puzzlecard", 1, true) then
+        return true
+    end
+    return obj:FindFirstChildWhichIsA("ClickDetector", true) ~= nil
+        or obj:FindFirstChildWhichIsA("ProximityPrompt", true) ~= nil
+end
+
+local function getCardIdentity(obj)
+    for _, attr in ipairs({"Value", "Symbol", "Icon", "CardValue", "Match", "Type"}) do
+        local a = obj:GetAttribute(attr)
+        if a ~= nil then return tostring(a) end
+    end
+    for _, child in ipairs(obj:GetDescendants()) do
+        if child:IsA("StringValue") or child:IsA("IntValue") then
+            local n = normalizeName(child.Name)
+            if n:find("value") or n:find("symbol") or n:find("icon") or n:find("type") then
+                return tostring(child.Value)
+            end
+        elseif child:IsA("Decal") then
+            return tostring(child.Texture)
+        elseif child:IsA("ImageLabel") and child.Image ~= "" then
+            return tostring(child.Image)
+        end
+    end
+    return nil
+end
+
+local function collectCards(root, origin, radius)
+    local out = {}
+    for _, d in ipairs(root:GetDescendants()) do
+        if isCardLike(d) and d.Parent then
+            local p
+            if d:IsA("BasePart") then p = d.Position
+            elseif d:IsA("Model") then
+                local prim = d.PrimaryPart or d:FindFirstChildWhichIsA("BasePart")
+                if prim then p = prim.Position end
+            end
+            if p and (p - origin).Magnitude <= radius then out[#out+1] = d end
+        end
+    end
+    return out
+end
+
+local function tickMemoryPuzzle(root, origin)
+    local cards = collectCards(root, origin, AUTOGEN.MaxDistance)
+    if #cards < 2 then return false end
+    local now = tick()
+    if now - MEMORY.LastClick < MEMORY.ClickCooldown then return true end
+
+    -- Known value → find match
+    for i = 1, #cards - 1 do
+        local a = cards[i]
+        local aId = getCardIdentity(a) or MEMORY.Known[tostring(a)]
+        if aId then
+            for j = i + 1, #cards do
+                local b = cards[j]
+                local bId = getCardIdentity(b) or MEMORY.Known[tostring(b)]
+                if bId == aId then
+                    fireInteraction(a)
+                    task.delay(0.15, function() fireInteraction(b) end)
+                    MEMORY.Known[tostring(a)] = nil
+                    MEMORY.Known[tostring(b)] = nil
+                    MEMORY.LastClick = now
+                    if AUTOGEN.Debug then print("[AG] Memory match:", tostring(aId)) end
+                    return true
+                end
+            end
+        end
+    end
+
+    -- Flip two unknowns
+    local unknowns = {}
+    for _, c in ipairs(cards) do
+        if not MEMORY.Known[tostring(c)] and not getCardIdentity(c) then
+            unknowns[#unknowns+1] = c
+        end
+    end
+    if #unknowns >= 2 then
+        local a, b = unknowns[1], unknowns[2]
+        MEMORY.LastClick = now
+        fireInteraction(a)
+        task.delay(0.2, function()
+            local va = getCardIdentity(a)
+            if va then MEMORY.Known[tostring(a)] = va end
+            task.wait(0.3)
+            fireInteraction(b)
+            task.delay(0.2, function()
+                local vb = getCardIdentity(b)
+                if vb then MEMORY.Known[tostring(b)] = vb end
+            end)
+        end)
+        if AUTOGEN.Debug then print("[AG] Memory flip") end
+        return true
+    end
+    return false
+end
+
+-- === GEAR ===
+local GEAR = { LastFire = 0, FireInterval = 0.25 }
+
+local function tickGearPuzzle(root, origin)
+    local gears = {}
+    for _, d in ipairs(root:GetDescendants()) do
+        if d:IsA("Model") or d:IsA("BasePart") then
+            local n = normalizeName(d.Name)
+            if n:find("gear") or n:find("cog") or n:find("wheel") then
+                local p = d:IsA("BasePart") and d
+                       or (d.PrimaryPart or d:FindFirstChildWhichIsA("BasePart"))
+                if p and (p.Position - origin).Magnitude <= AUTOGEN.MaxDistance then
+                    gears[#gears+1] = d
+                end
+            end
+        end
+    end
+    if #gears == 0 then return false end
+
+    local now = tick()
+    if now - GEAR.LastFire < GEAR.FireInterval then return true end
+    GEAR.LastFire = now
+
+    for _, g in ipairs(gears) do
+        local fired = false
+        for _, re in ipairs(g:GetDescendants()) do
+            if re:IsA("RemoteEvent") then
+                local rn = normalizeName(re.Name)
+                if rn:find("rotate") or rn:find("turn") or rn:find("spin") then
+                    pcall(function() re:FireServer(AUTOGEN.RotateDirection) end)
+                    fired = true
+                end
+            end
+        end
+        if not fired then fireInteraction(g, {AUTOGEN.RotateDirection}) end
+    end
+    if AUTOGEN.Debug then print("[AG] Gear rotate ×"..#gears) end
+    return true
+end
+
+-- === Fallback: click puzzle UI buttons (basic puzzle) ===
+local function clickPuzzleButtons()
+    if not PlayerGui then return false end
+    for _, sg in ipairs(PlayerGui:GetChildren()) do
+        if sg:IsA("ScreenGui") and sg.Enabled then
+            for _, d in ipairs(sg:GetDescendants()) do
+                if d:IsA("GuiButton") and d.Visible then
+                    local n = normalizeName(d.Name)
+                    if n:find("progress") or n:find("hold") or n:find("work")
+                       or n:find("interact") or n:find("gen") or n:find("fix") then
+                        if SIGNAL_AVAILABLE then
+                            pcall(firesignalF, d.MouseButton1Click)
+                            return true
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return false
+end
+
+-- === Diagnostic ===
+local function scanPuzzlesDiagnostic()
+    local map = getIngameMap()
+    if not map then print("[AG] no ingame map"); return end
+    print("[AG] === Puzzle Diagnostic ===")
+    local gens = {}
     pcall(function() gens = map:QueryDescendants("Model#Generator:has(#Main)") end)
-    if not gens then
-        gens = {}
+    if not gens or #gens == 0 then
         for _, o in ipairs(map:GetChildren()) do
             if o:IsA("Model") and (o.Name == "Generator" or o.Name == "FakeGenerator") then
                 gens[#gens+1] = o
             end
         end
     end
-    for _, obj in ipairs(gens) do
-        local prog = obj:FindFirstChild("Progress")
-        local main = obj:FindFirstChild("Main")
-        if prog and prog.Value ~= 100 and main
-           and (main.Position - pos).Magnitude <= AUTOGEN.MaxDistance then
-            local remotes = obj:FindFirstChild("Remotes")
-            local re = remotes and remotes:FindFirstChildOfClass("RemoteEvent")
-            if re then pcall(function() re:FireServer() end) end
+    print("[AG] Found "..#gens.." generators")
+    local mr = getMyRoot()
+    for _, gen in ipairs(gens) do
+        local ptype = getPuzzleType(gen)
+        local main = gen:FindFirstChild("Main")
+        local pos = main and main.Position or Vector3.zero
+        local dist = mr and (pos - mr.Position).Magnitude or -1
+        print(string.format("  %s | type=%s | dist=%.1f | children=%d",
+            gen:GetFullName(), ptype, dist, #gen:GetChildren()))
+        for _, d in ipairs(gen:GetDescendants()) do
+            if d:IsA("RemoteEvent") or d:IsA("ProximityPrompt") or d:IsA("ClickDetector") then
+                print(string.format("    → %s (%s)", d:GetFullName(), d.ClassName))
+            end
         end
     end
+    local skui = findSkillCheckUI()
+    if skui then print("[AG] Skill check UI active: "..skui:GetFullName()) end
 end
+
+-- === MAIN LOOP ===
 local function autogenLoop()
     if AUTOGEN._thread then pcall(task.cancel, AUTOGEN._thread); AUTOGEN._thread = nil end
     if not AUTOGEN.Enabled then return end
     AUTOGEN._thread = task.spawn(function()
         while AUTOGEN.Enabled do
-            pcall(autogenFireOnce)
-            local t = os.clock() + math.max(AUTOGEN.Interval, 0.1)
-            while AUTOGEN.Enabled and os.clock() < t do RunService.Heartbeat:Wait() end
+            local ok, err = pcall(function()
+                -- Skill check has highest priority (UI may be up anytime)
+                if AUTOGEN.SkillCheckEnabled and handleSkillCheck() then return end
+
+                local map = getIngameMap()
+                local mr = getMyRoot()
+                if not map or not mr then return end
+                local pos = mr.Position
+
+                -- Throttle the QueryDescendants call
+                local now = tick()
+                if now - AUTOGEN._lastGenQuery > 0.5 then
+                    AUTOGEN._cachedGens = {}
+                    pcall(function() AUTOGEN._cachedGens = map:QueryDescendants("Model#Generator:has(#Main)") end)
+                    if not AUTOGEN._cachedGens or #AUTOGEN._cachedGens == 0 then
+                        AUTOGEN._cachedGens = {}
+                        for _, o in ipairs(map:GetChildren()) do
+                            if o:IsA("Model") and (o.Name == "Generator" or o.Name == "FakeGenerator") then
+                                AUTOGEN._cachedGens[#AUTOGEN._cachedGens+1] = o
+                            end
+                        end
+                    end
+                    AUTOGEN._lastGenQuery = now
+                end
+
+                for _, obj in ipairs(AUTOGEN._cachedGens) do
+                    if obj and obj.Parent then
+                        local main = obj:FindFirstChild("Main")
+                        local prog = obj:FindFirstChild("Progress")
+                        if main and main:IsA("BasePart")
+                           and (main.Position - pos).Magnitude <= AUTOGEN.MaxDistance
+                           and (not prog or prog.Value ~= 100) then
+                            local ptype = getPuzzleType(obj)
+                            if AUTOGEN.Debug then
+                                print(string.format("[AG] gen %s → %s (%.1f)", obj.Name, ptype,
+                                    (main.Position - pos).Magnitude))
+                            end
+                            if ptype == "memory" and AUTOGEN.MemoryEnabled then
+                                if tickMemoryPuzzle(obj, pos) then AUTOGEN._lastGenTouch = tick() end
+                            elseif ptype == "gear" and AUTOGEN.GearEnabled then
+                                if tickGearPuzzle(obj, pos) then AUTOGEN._lastGenTouch = tick() end
+                            else
+                                -- basic / skillcheck: fire interaction on interval
+                                if tick() - AUTOGEN._lastBasicFire >= AUTOGEN.Interval then
+                                    if fireInteraction(obj) or clickPuzzleButtons() then
+                                        AUTOGEN._lastBasicFire = tick()
+                                        AUTOGEN._lastGenTouch = tick()
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end)
+            if not ok and AUTOGEN.Debug then
+                warn("[AG] loop error:", err)
+            end
+            task.wait(0.06)
         end
         AUTOGEN._thread = nil
     end)
@@ -941,22 +1546,9 @@ task.spawn(function()
     pcall(function() Sprinting = require(ReplicatedStorage.Systems.Character.Game.Sprinting) end)
 end)
 local STAM = { Mode="Regular", orig=nil, _thread=nil }
-task.spawn(function()
-    while not Sprinting do task.wait(0.5) end
-    STAM.orig = {
-        MaxStamina=Sprinting.MaxStamina, StaminaLoss=Sprinting.StaminaLoss,
-        StaminaGain=Sprinting.StaminaGain, SprintSpeed=Sprinting.SprintSpeed,
-        StaminaLossDisabled=Sprinting.StaminaLossDisabled,
-    }
-    -- BUGFIX #10: re-apply user's pre-load selection
-    if STAM.Mode ~= "Regular" then
-        pcall(stamSetMode, STAM.Mode)
-    end
-end)
 local function stamSetMode(mode)
     STAM.Mode = mode
     if not Sprinting then return end
-    -- BUGFIX #13: safe-cancel of possibly-finished thread
     if STAM._thread then
         if coroutine.status(STAM._thread) ~= "dead" then
             pcall(task.cancel, STAM._thread)
@@ -988,16 +1580,21 @@ local function stamSetMode(mode)
         end)
     end
 end
+task.spawn(function()
+    while not Sprinting do task.wait(0.5) end
+    STAM.orig = {
+        MaxStamina=Sprinting.MaxStamina, StaminaLoss=Sprinting.StaminaLoss,
+        StaminaGain=Sprinting.StaminaGain, SprintSpeed=Sprinting.SprintSpeed,
+        StaminaLossDisabled=Sprinting.StaminaLossDisabled,
+    }
+    if STAM.Mode ~= "Regular" then
+        pcall(stamSetMode, STAM.Mode)
+    end
+end)
 
 -- =========================================================
 -- HDT
 -- =========================================================
-local HDT_Trigger
-local HDT = {
-    Enabled=false, AutoTrigger=true, Speed=12, StopDistance=2,
-    DragDuration=2, Cooldown=27, MaxRange=40,
-    _dragId=0, _dragging=false, _conn=nil, _lastFire=0, _cooldownUntil=0,
-}
 local function nearestKillerPart()
     local mr = getMyRoot()
     local pf = Workspace:FindFirstChild("Players")
@@ -1016,6 +1613,7 @@ local function nearestKillerPart()
     end
     return best
 end
+
 local function startDrag(target)
     if not target or not target.Parent then return end
     if hasHelplessEffect() then return end
@@ -1066,6 +1664,13 @@ local function startDrag(target)
         hrp.AssemblyAngularVelocity = Vector3.zero
     end)
 end
+
+HDT = {
+    Enabled=false, AutoTrigger=true, Speed=12, StopDistance=2,
+    DragDuration=2, Cooldown=27, MaxRange=40,
+    _dragId=0, _dragging=false, _conn=nil, _lastFire=0, _cooldownUntil=0,
+}
+
 HDT_Trigger = function(force)
     if not force and not HDT.Enabled then return end
     if hasHelplessEffect() then return end
@@ -1081,6 +1686,12 @@ HDT_Trigger = function(force)
     startDrag(target)
 end
 
+-- FIX 8: assign HDT_Auto so tryBlockFromAttack can safely fire it
+HDT_Auto = function()
+    if not HDT or not HDT.Enabled or not HDT.AutoTrigger then return end
+    task.spawn(function() pcall(HDT_Trigger, false) end)
+end
+
 -- =========================================================
 -- AIM
 -- =========================================================
@@ -1088,6 +1699,12 @@ local Camera = Workspace.CurrentCamera
 Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
     if Workspace.CurrentCamera then Camera = Workspace.CurrentCamera end
 end)
+
+-- FIX 6: safe look-at (coincident points guard)
+local function safeLookAt(pos, target)
+    if (target - pos).Magnitude < 0.01 then return CFrame.new(pos) end
+    return CFrame.lookAt(pos, target)
+end
 
 local AIM = {
     Enabled=false, AimMode="Camera", Smooth=1, PredictMode="Both",
@@ -1125,7 +1742,8 @@ local function updateCachedTarget()
     end
     AIM.CachedTargetHRP = best
 end
-task.spawn(function() while true do task.wait(0.05); pcall(updateCachedTarget) end end)
+-- OPT B: 10 Hz
+task.spawn(function() while true do task.wait(0.1); pcall(updateCachedTarget) end end)
 local function isPingAbility(n) return n and PING_ABILITIES[n] == true end
 local function predictHRP(hrp)
     if not hrp then return nil end
@@ -1244,6 +1862,9 @@ local function loadCharacterAnims()
     end
     registerGuestPunchAnims()
 end
+
+-- FIX 9: capped retries
+local bindRetries = 0
 local function bindAnimWatch()
     if AbilityHook._animConn then
         pcall(function() AbilityHook._animConn:Disconnect() end)
@@ -1252,7 +1873,12 @@ local function bindAnimWatch()
     local char = lp.Character; if not char then return end
     local hum = char:FindFirstChildOfClass("Humanoid")
     local animator = hum and hum:FindFirstChildOfClass("Animator")
-    if not animator then task.delay(0.4, bindAnimWatch) return end
+    if not animator then
+        bindRetries += 1
+        if bindRetries < 25 then task.delay(0.4, bindAnimWatch) end
+        return
+    end
+    bindRetries = 0
     AbilityHook._animConn = animator.AnimationPlayed:Connect(function(track)
         if not AbilityHook.Enabled then return end
         local anim = track and track.Animation; if not anim then return end
@@ -1266,11 +1892,15 @@ local function bindAnimWatch()
         AimFor((info.Lock or 1) * (AIM.LockTime or 1), info.Ability)
     end)
 end
-lp.CharacterAdded:Connect(function() task.wait(0.4); loadCharacterAnims(); bindAnimWatch() end)
+lp.CharacterAdded:Connect(function()
+    bindRetries = 0
+    task.wait(0.4); loadCharacterAnims(); bindAnimWatch()
+end)
 task.spawn(function() if lp.Character then task.wait(0.4); loadCharacterAnims(); bindAnimWatch() end end)
+-- OPT E: 10 s
 task.spawn(function()
     while true do
-        task.wait(5)
+        task.wait(10)
         if lp.Character then
             local name = lp.Character:GetAttribute("CharacterName") or lp.Character.Name
             local skin = lp.Character:GetAttribute("SkinName") or ""
@@ -1283,9 +1913,13 @@ task.spawn(function()
 end)
 
 local autoRotRestored = true
--- BUGFIX #1: unbind so re-execution doesn't error
 pcall(RunService.UnbindFromRenderStep, RunService, "SCPHubAim")
 RunService:BindToRenderStep("SCPHubAim", Enum.RenderPriority.Camera.Value + 1, function(dt)
+    if not Camera then Camera = Workspace.CurrentCamera end
+    if not Camera then
+        if not autoRotRestored then restoreAutoRotate(); autoRotRestored = true end
+        return
+    end
     local aimActive = AIM.Enabled or (tick() < (AIM._aimUntil or 0))
     if not isPlayingSurvivor() or not aimActive or not AIM.CachedTargetHRP or not AIM.CachedTargetHRP.Parent then
         if not autoRotRestored then restoreAutoRotate(); autoRotRestored = true end
@@ -1315,14 +1949,14 @@ RunService:BindToRenderStep("SCPHubAim", Enum.RenderPriority.Camera.Value + 1, f
     local alpha = (smooth >= 0.999) and 1 or (1 - math.exp(-dt * math.clamp(smooth * 30, 2, 60)))
     local mode = AIM.AimMode
     if mode == "Camera" or mode == "HRP+Camera" then
-        Camera.CFrame = Camera.CFrame:Lerp(CFrame.lookAt(Camera.CFrame.Position, targetPos), alpha)
+        Camera.CFrame = Camera.CFrame:Lerp(safeLookAt(Camera.CFrame.Position, targetPos), alpha)
     end
     if mode == "HRP" or mode == "HRP+Camera" then
         disableAutoRotate(); autoRotRestored = false
         local flat = Vector3.new(targetPos.X, mr.Position.Y, targetPos.Z)
         local delta = flat - mr.Position
         if delta.Magnitude > 0.05 then
-            mr.CFrame = mr.CFrame:Lerp(CFrame.lookAt(mr.Position, flat), alpha)
+            mr.CFrame = mr.CFrame:Lerp(safeLookAt(mr.Position, flat), alpha)
         end
     elseif not autoRotRestored then
         restoreAutoRotate(); autoRotRestored = true
@@ -1330,7 +1964,9 @@ RunService:BindToRenderStep("SCPHubAim", Enum.RenderPriority.Camera.Value + 1, f
     if tick() >= (AIM._aimUntil or 0) then AIM.CurrentAbility = nil end
 end)
 
+-- =========================================================
 -- Chance Aimlock
+-- =========================================================
 local ChanceAimbot = {
     Enabled=false, LockTime=1, PredMin=2, PredMax=3,
     TurnLeadMult=1,
@@ -1416,7 +2052,6 @@ local function chanceStartAimlock()
     ChanceAimbot._isLocking = true
     ChanceAimbot._lockUntil = os.clock() + ChanceAimbot.LockTime
     ChanceAimbot._currentTarget = root
-    -- BUGFIX #5: don't prime velocity history with 6 identical samples
     ChanceAimbot._velHistory = {}
     chanceDoAimlock(root)
 end
@@ -1434,24 +2069,16 @@ local function chanceHookButton(btn)
     end)
     ChanceAimbot._conns[conn] = true
 end
-local function chanceScanButtons()
-    if not PlayerGui then return end
-    -- BUGFIX #4: rebuild connection list, drop dead connections
-    for conn in pairs(ChanceAimbot._conns) do
-        if not conn.Connected then
-            ChanceAimbot._conns[conn] = nil
-        end
-    end
+-- OPT A: event-driven, no full-descendant polling
+PlayerGui.DescendantAdded:Connect(function(d)
+    if ChanceAimbot.Enabled then pcall(chanceHookButton, d) end
+end)
+local function chanceInitialScan()
+    if not ChanceAimbot.Enabled or not PlayerGui then return end
     for _, b in ipairs(PlayerGui:GetDescendants()) do
         pcall(chanceHookButton, b)
     end
 end
-task.spawn(function()
-    while true do
-        if ChanceAimbot.Enabled then pcall(chanceScanButtons); task.wait(0.4)
-        else task.wait(0.5) end
-    end
-end)
 RunService.RenderStepped:Connect(function()
     if not ChanceAimbot.Enabled or not ChanceAimbot._isLocking then return end
     local now = os.clock()
@@ -1472,7 +2099,6 @@ end)
 local Misc_HideInjury = false
 local Misc_DisableBlindness = false
 
--- BUGFIX #2 / #14: only act when toggle is ON. Never force-show / force-enable.
 local injuryWasHidden = setmetatable({}, { __mode = "k" })
 local blindnessWasHidden = setmetatable({}, { __mode = "k" })
 
@@ -1520,15 +2146,10 @@ end
 -- =========================================================
 local Window = Rayfield:CreateWindow({
     name = "SCP Hub",
-    subtitle = "v1.84",
+    subtitle = "v1.86",
     sidebarLayout = true,
-    configuration = { autoSave = true, autoLoad = true, fileName = "SCPHub_v184" },
+    configuration = { autoSave = true, autoLoad = true, fileName = "SCPHub_v186" },
 })
-
-task.defer(function()
-    ESP_CFG.Killers.Enabled = true
-    ESP_CFG.Survivors.Enabled = true
-end)
 
 -- =========================================================
 -- ESP Tab
@@ -1575,6 +2196,49 @@ ABTab:CreateToggle({ name = "Log Sound IDs", default = false, callback = functio
 ABTab:CreateButton({ name = "Mark Last as Behead", callback = function()
     if _G.SCPHub_LastLoggedID then BEHEAD_IDS[_G.SCPHub_LastLoggedID] = true end
 end })
+
+-- =========================================================
+-- HMT Tab
+-- =========================================================
+local HMT_Tab = Window:CreateTab({ name = "HMT", icon = 93364949241311 })
+HMT_Tab:CreateSection("Hitbox Moving Tech")
+HMT_Tab:CreateToggle({ name = "Enable HMT", default = false, callback = function(v) HMT.Enabled = v end })
+HMT_Tab:CreateToggle({ name = "Snap Back After Block", default = true, callback = function(v) HMT.SnapBack = v end })
+HMT_Tab:CreateToggle({ name = "Debug Logging", default = false, callback = function(v) HMT.Debug = v end })
+HMT_Tab:CreateSlider({ name = "Move Speed", min = 5, max = 20, default = 13, increment = 1,
+    callback = function(v) HMT.Speed = v end })
+HMT_Tab:CreateSlider({ name = "Trigger Range", min = 10, max = 60, default = 30, increment = 1,
+    callback = function(v) HMT.TriggerRange = v end })
+HMT_Tab:CreateSlider({ name = "Max Travel", min = 5, max = 40, default = 20, increment = 1,
+    callback = function(v) HMT.MaxTravel = v end })
+HMT_Tab:CreateSlider({ name = "Max Move Time (0.1s)", min = 1, max = 20, default = 6, increment = 1,
+    callback = function(v) HMT.MaxTime = v / 10 end })
+HMT_Tab:CreateSlider({ name = "Hold Frames", min = 1, max = 6, default = 2, increment = 1,
+    callback = function(v) HMT.HoldFrames = v end })
+HMT_Tab:CreateButton({ name = "Test on Nearest Killer", callback = function()
+    local pf = Workspace:FindFirstChild("Players")
+    local kf = pf and pf:FindFirstChild("Killers")
+    if not kf then print("[HMT] no killers folder") return end
+    local myRoot = getMyRoot()
+    local best, bd = nil, math.huge
+    for _, k in ipairs(kf:GetChildren()) do
+        if k:IsA("Model") then
+            local hrp = k:FindFirstChild("HumanoidRootPart")
+            if hrp and myRoot then
+                local d = (hrp.Position - myRoot.Position).Magnitude
+                if d < bd then bd = d; best = k end
+            end
+        end
+    end
+    if best then
+        print(string.format("[HMT] test on %s (%.1f studs)", best.Name, bd))
+        hmtStart(best, nil)
+    else
+        print("[HMT] no killer found")
+    end
+end })
+HMT_Tab:CreateSection("Notes")
+HMT_Tab:CreateParagraph({ title = "How it works", content = "On attack detection, if you're outside the killer's hitbox but within Trigger Range, HMT walks your HRP toward the attack center at Move Speed. Fires block on arrival, holds for Hold Frames, then snaps back. Keep Move Speed at or below blocked-sprint (13) to stay under AC detection." })
 
 -- =========================================================
 -- Box Tab
@@ -1634,13 +2298,23 @@ BoxTab:CreateSlider({ name = "Length", min = 1, max = 120, default = 30, increme
 BoxTab:CreateSlider({ name = "Height", min = 1, max = 30, default = 8, increment = 1, callback = function(v) BoxCfg.Height = v end })
 
 -- =========================================================
--- Gen Tab
+-- Gen Tab (with puzzle type toggles)
 -- =========================================================
 local GenTab = Window:CreateTab({ name = "Gen", icon = 93364949241311 })
 GenTab:CreateSection("Auto Generator")
 GenTab:CreateToggle({ name = "Enable Auto Gen", default = false, callback = function(v) AUTOGEN.Enabled = v; autogenLoop() end })
 GenTab:CreateSlider({ name = "Range", min = 5, max = 30, default = 10, increment = 1, callback = function(v) AUTOGEN.MaxDistance = v end })
 GenTab:CreateSlider({ name = "Interval", min = 1, max = 5, default = 1, increment = 1, callback = function(v) AUTOGEN.Interval = v end })
+GenTab:CreateSection("Puzzle Types")
+GenTab:CreateToggle({ name = "Memory Match (4 pairs)", default = true, callback = function(v) AUTOGEN.MemoryEnabled = v end })
+GenTab:CreateToggle({ name = "Gear (rotate)", default = true, callback = function(v) AUTOGEN.GearEnabled = v end })
+GenTab:CreateSlider({ name = "Gear Direction", min = -1, max = 1, default = 1, increment = 2, callback = function(v) AUTOGEN.RotateDirection = v end })
+GenTab:CreateSection("Skill Check")
+GenTab:CreateToggle({ name = "DBD Skill Check", default = true, callback = function(v) AUTOGEN.SkillCheckEnabled = v end })
+GenTab:CreateToggle({ name = "Spam Mode (unreliable)", default = false, callback = function(v) AUTOGEN.SkillCheckSpamMode = v end })
+GenTab:CreateSection("Debug")
+GenTab:CreateToggle({ name = "Debug Logging", default = false, callback = function(v) AUTOGEN.Debug = v end })
+GenTab:CreateButton({ name = "Diagnostic Scan", callback = function() scanPuzzlesDiagnostic() end })
 
 -- =========================================================
 -- Stamina Tab
@@ -1681,10 +2355,9 @@ AimTab:CreateSection("Chance Aimlock")
 AimTab:CreateToggle({ name = "Enable", default = false, callback = function(v)
     ChanceAimbot.Enabled = v
     if v then
-        chanceScanButtons()
+        chanceInitialScan()
     else
         ChanceAimbot._isLocking = false
-        -- BUGFIX #4: fully disconnect on disable
         for conn in pairs(ChanceAimbot._conns) do
             pcall(function() conn:Disconnect() end)
         end
@@ -1696,11 +2369,10 @@ AimTab:CreateSlider({ name = "Lock Time (0.1s)", min = 3, max = 30, default = 10
 AimTab:CreateSlider({ name = "Prediction Min (x10)", min = 0, max = 100, default = 20, increment = 1, callback = function(v) ChanceAimbot.PredMin = v / 10 end })
 AimTab:CreateSlider({ name = "Prediction Max (x10)", min = 0, max = 150, default = 30, increment = 1, callback = function(v) ChanceAimbot.PredMax = v / 10 end })
 AimTab:CreateSlider({ name = "Turn Lead (x10)", min = 0, max = 30, default = 10, increment = 1, callback = function(v) ChanceAimbot.TurnLeadMult = v / 10 end })
--- BUGFIX #11: handle both string and Enum.KeyCode
+-- FIX 7: respects user rebind
 AimTab:CreateKeybind({ name = "Aimlock Key", default = "V", callback = function(k)
     if not ChanceAimbot.Enabled then return end
-    local pressedV = (k == Enum.KeyCode.V) or (tostring(k) == "V") or (tostring(k) == "Enum.KeyCode.V")
-    if pressedV then chanceStartAimlock() end
+    chanceStartAimlock()
 end })
 
 -- =========================================================
@@ -1739,4 +2411,4 @@ _G.SCPHubInput = UIS.InputBegan:Connect(function(input, gpe)
     end
 end)
 
-Window:Notify({ title = "SCP Hub", content = "Loaded · v1.84 (bugfixes applied)", duration = 3 })
+Window:Notify({ title = "SCP Hub", content = "Loaded · v1.86 · puzzle detection ready", duration = 3 })

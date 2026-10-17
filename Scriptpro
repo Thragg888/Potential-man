@@ -1,4 +1,4 @@
--- SCP Hub v2.1 — Boxes Removed, Meowsaken Facing Circle Restored
+-- SCP Hub v2.3.1 — Fixed Facing Visual (Disk), ESP Isolation, KillersFolder Nil Guard
 repeat task.wait() until game:IsLoaded()
 
 local Players           = game:GetService("Players")
@@ -138,8 +138,34 @@ local LOG_IDS = false
 _G.SCPHub_LastLoggedID = nil
 
 -- =========================================================
--- BLOCK FIRING & MEOWSAKEN FACING CHECK
+-- MEOWSAKEN EXACT FACING CHECK & AUTO BLOCK
 -- =========================================================
+local facingCheckEnabled = true
+local customFacingDot = 0.3
+local looseFacing = true
+
+local function isFacing(localRoot, targetRoot)
+    local enabled = facingCheckEnabled
+    if not enabled then return true end
+
+    local dx = localRoot.Position.X - targetRoot.Position.X
+    local dy = localRoot.Position.Y - targetRoot.Position.Y
+    local dz = localRoot.Position.Z - targetRoot.Position.Z
+
+    local mag = math.sqrt(dx*dx + dy*dy + dz*dz)
+    if mag == 0 then
+        return true
+    end
+    local invMag = 1 / mag
+
+    local ux, uy, uz = dx * invMag, dy * invMag, dz * invMag
+    local lv = targetRoot.CFrame.LookVector
+    local lx, ly, lz = lv.X, lv.Y, lv.Z
+
+    local dot = lx * ux + ly * uy + lz * uz
+    return dot > (customFacingDot or -0.3)
+end
+
 local BlockButton = nil
 local function getBlockButton()
     if BlockButton and BlockButton.Parent then return BlockButton end
@@ -183,24 +209,6 @@ local AB_Cfg = {
     Debug = false,
 }
 
--- Meowsaken exact facing check
-local function isFacing(localRoot, targetRoot)
-    local dx = localRoot.Position.X - targetRoot.Position.X
-    local dy = localRoot.Position.Y - targetRoot.Position.Y
-    local dz = localRoot.Position.Z - targetRoot.Position.Z
-
-    local mag = math.sqrt(dx*dx + dy*dy + dz*dz)
-    if mag == 0 then return true end
-    local invMag = 1 / mag
-
-    local ux, uy, uz = dx * invMag, dy * invMag, dz * invMag
-    local lv = targetRoot.CFrame.LookVector
-    local lx, ly, lz = lv.X, lv.Y, lv.Z
-
-    local dot = lx * ux + ly * uy + lz * uz
-    return dot > -0.3
-end
-
 local function tryBlock(killer)
     if not AB_Cfg.Enabled then return end
     if not isSurvivor() or hasHelplessEffect() then return end
@@ -211,12 +219,20 @@ local function tryBlock(killer)
 
     local dist = (myRoot.Position - killerRoot.Position).Magnitude
     if dist <= AB_Cfg.Range and isFacing(myRoot, killerRoot) then
-        fireBlockNow()
+        local gui = PlayerGui:FindFirstChild("MainUI")
+        local ability = gui and gui:FindFirstChild("AbilityContainer")
+        local btn = ability and ability:FindFirstChild("Block")
+        local cooldown = btn and btn:FindFirstChild("CooldownTime")
+        -- FIX: If the cooldown element is missing, still fire the block.
+        -- Only skip if it EXISTS and has text (meaning "on cooldown").
+        if not cooldown or cooldown.Text == "" then
+            fireBlockNow()
+        end
     end
 end
 
 -- =========================================================
--- MEOWSAKEN FACING CHECK VISUAL (Circle)
+-- MEOWSAKEN FACING CIRCLE VISUAL  (FIXED — renders as flat disk)
 -- =========================================================
 local facingVisualOn = false
 local facingVisuals = {} 
@@ -226,35 +242,50 @@ local function updateFacingVisual(killer, visual)
     local hrp = killer:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
 
-    local minFrac = 0.20
-    local radius = math.max(1, AB_Cfg.Range * (minFrac + (1 - minFrac) * 0.5))
+    local dot = math.clamp(customFacingDot or -0.3, -1, 1)
+    local angle = math.acos(dot)              
+    local frac = angle / math.pi              
+
+    local minFrac = 0.20                      
+    local radius = math.max(1, AB_Cfg.Range * (minFrac + (1 - minFrac) * frac))
     visual.Radius = radius
     visual.Height = 0.12
 
-    local forwardDist = AB_Cfg.Range * (0.35 + 0.15 * 0.5) 
-    local yOffset = -(hrp.Size.Y / 2 + 0.05)
-    visual.CFrame = CFrame.new(0, yOffset, -forwardDist) * CFrame.Angles(math.rad(90), 0, 0)
+    local forwardDist = AB_Cfg.Range * (0.35 + 0.15 * frac)
+    -- FIX #1: clamp Y so a bloated HRP (hitbox expander) doesn't sink the disk underground
+    local yOffset = -(math.min(hrp.Size.Y, 3) / 2 + 0.05)
+    -- FIX #2: CylinderHandleAdornment's axis is X. Rotate around Z (not X) so the cylinder
+    -- axis points UP and renders as a flat disk on the floor — NOT a horizontal bar.
+    visual.CFrame = CFrame.new(0, yOffset, -forwardDist) * CFrame.Angles(0, 0, math.rad(90))
 
     local myRoot = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
-    local inRange = false
+    local inRange, facing = false, false
 
     if myRoot and hrp then
         local dist = (hrp.Position - myRoot.Position).Magnitude
         inRange = dist <= AB_Cfg.Range
+        if inRange then facing = isFacing(myRoot, hrp) end
     end
 
-    if inRange then
-        visual.Color3 = Color3.fromRGB(255, 0, 0) 
-        visual.Transparency = 0.40
+    -- FIX #3: color-coded states so you can visually verify the facing check
+    if inRange and facing then
+        visual.Color3 = Color3.fromRGB(0, 255, 0)      -- GREEN: block WILL fire
+        visual.Transparency = 0.30
+    elseif inRange then
+        visual.Color3 = Color3.fromRGB(255, 0, 0)      -- RED: in range but facing fails
+        visual.Transparency = 0.45
     else
-        visual.Color3 = Color3.fromRGB(255, 255, 0) 
-        visual.Transparency = 0.85
+        visual.Color3 = Color3.fromRGB(255, 255, 0)    -- YELLOW: out of range
+        visual.Transparency = 0.80
     end
 end
 
 local function addFacingVisual(killer)
     if not killer or not killer:IsA("Model") then return end
-    if facingVisuals[killer] then return end
+    local existing = facingVisuals[killer]
+    if existing and existing.Parent then return end
+    facingVisuals[killer] = nil  -- clear stale entry
+
     local hrp = killer:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
 
@@ -275,14 +306,18 @@ end
 local function removeFacingVisual(killer)
     local v = facingVisuals[killer]
     if v then
-        v:Destroy()
+        pcall(function() v:Destroy() end)
         facingVisuals[killer] = nil
     end
 end
 
+-- FIX #4: RenderStepped loop now respects `facingVisualOn` so toggling off
+-- via the AB tab (or any code path) is fully honored, even if KillersFolder was nil.
 RunService.RenderStepped:Connect(function()
     for killer, visual in pairs(facingVisuals) do
-        if not killer.Parent or not killer:FindFirstChild("HumanoidRootPart") then
+        if not facingVisualOn
+           or not killer.Parent
+           or not killer:FindFirstChild("HumanoidRootPart") then
             removeFacingVisual(killer)
         else
             updateFacingVisual(killer, visual)
@@ -290,15 +325,10 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
-KillersFolder.ChildAdded:Connect(function(killer)
-    if facingVisualOn then
-        task.spawn(function()
-            local hrp = killer:WaitForChild("HumanoidRootPart", 5)
-            if hrp then addFacingVisual(killer) end
-        end)
-    end
-end)
-KillersFolder.ChildRemoved:Connect(function(killer) removeFacingVisual(killer) end)
+-- NOTE: The original top-level KillersFolder.ChildAdded / ChildRemoved connections
+-- that lived here have been REMOVED. They crash the entire script if KillersFolder
+-- is nil at load time. They are now attached inside the KillersFolder watcher loop
+-- (see below) which guarantees the folder exists first.
 
 -- =========================================================
 -- HITBOX EXPANDER (Infinite Range)
@@ -413,6 +443,9 @@ local function hookKillerAnims(killer)
     end
 end
 
+-- =========================================================
+-- KILLERS FOLDER WATCHER (also owns facing visual add/remove)
+-- =========================================================
 task.spawn(function()
     local lastK
     while true do
@@ -422,10 +455,35 @@ task.spawn(function()
             local kf = pf:FindFirstChild("Killers")
             if kf and kf ~= lastK then
                 KillersFolder = kf; lastK = kf
-                for _, d in ipairs(kf:GetDescendants()) do if d:IsA("Sound") then hookSound(d) end end
-                kf.DescendantAdded:Connect(function(d) if d:IsA("Sound") then hookSound(d) end end)
-                for _, k in ipairs(kf:GetChildren()) do if k:IsA("Model") then hookKillerAnims(k) end end
-                kf.ChildAdded:Connect(function(k) if k:IsA("Model") then hookKillerAnims(k) end end)
+
+                for _, d in ipairs(kf:GetDescendants()) do
+                    if d:IsA("Sound") then hookSound(d) end
+                end
+                kf.DescendantAdded:Connect(function(d)
+                    if d:IsA("Sound") then hookSound(d) end
+                end)
+
+                for _, k in ipairs(kf:GetChildren()) do
+                    if k:IsA("Model") then
+                        hookKillerAnims(k)
+                        if facingVisualOn then addFacingVisual(k) end
+                    end
+                end
+
+                kf.ChildAdded:Connect(function(k)
+                    if not k:IsA("Model") then return end
+                    hookKillerAnims(k)
+                    if facingVisualOn then
+                        task.spawn(function()
+                            local hrp = k:WaitForChild("HumanoidRootPart", 5)
+                            if hrp and facingVisualOn then addFacingVisual(k) end
+                        end)
+                    end
+                end)
+
+                kf.ChildRemoved:Connect(function(k)
+                    if k:IsA("Model") then removeFacingVisual(k) end
+                end)
             end
         end
     end
@@ -501,17 +559,17 @@ HDT_Auto = function()
 end
 
 -- =========================================================
--- ESP & AUTO GEN & AIM
+-- ESP  (IsKiller isolation fixed)
 -- =========================================================
 local ESP_CFG = { 
-    Killers = { Enabled=false, TextEnabled=false, FillColor=Color3.fromRGB(255,40,40), OutlineColor=Color3.new(1,1,1), FillTransparency=0.55, OutlineTransparency=0 },
+    Killers = { Enabled=false, TextEnabled=false, FillColor=Color3.fromRGB(255,40,40), OutlineColor=Color3.new(1,1,1), FillTransparency=0.55, OutlineTransparency=0 }, 
     Survivors = { Enabled=false, TextEnabled=false, FillColor=Color3.fromRGB(40,255,90), OutlineColor=Color3.new(1,1,1), FillTransparency=0.55, OutlineTransparency=0 } 
 }
 local ESP_TRACK = setmetatable({}, { __mode = "k" })
 
 local function espClear(m) 
     local t = ESP_TRACK[m]; if not t then return end
-    for _, o in pairs(t) do if o then pcall(function() o:Destroy() end) end end
+    for _, o in pairs(t) do if o and typeof(o) == "Instance" then pcall(function() o:Destroy() end) end end
     ESP_TRACK[m] = nil 
 end
 
@@ -520,13 +578,27 @@ local function espEnsure(m, cfg, isKiller, myHrp)
     local hum = m:FindFirstChildOfClass("Humanoid"); if hum and hum.Health <= 0 then espClear(m); return end
     if not cfg.Enabled and not cfg.TextEnabled then if ESP_TRACK[m] then espClear(m) end return end
     local t = ESP_TRACK[m]; if not t then t = {}; ESP_TRACK[m] = t end
+    -- FIX: tag the tracker with which group it belongs to, so the color/transparency
+    -- callbacks can update only one group without stomping the other.
+    t.IsKiller = isKiller
     if t.Chams and not t.Chams.Parent then t.Chams = nil end
     
     if cfg.Enabled then
-        if not t.Chams then local h = Instance.new("Highlight"); h.Adornee = m; h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop; h.Parent = m; t.Chams = h end
-        t.Chams.FillColor = cfg.FillColor; t.Chams.OutlineColor = cfg.OutlineColor
-        t.Chams.FillTransparency = cfg.FillTransparency; t.Chams.OutlineTransparency = cfg.OutlineTransparency
-    elseif t.Chams then pcall(function() t.Chams:Destroy() end); t.Chams = nil end
+        if not t.Chams then 
+            local h = Instance.new("Highlight")
+            h.Adornee = m
+            h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+            h.Parent = m
+            t.Chams = h 
+        end
+        t.Chams.FillColor = cfg.FillColor
+        t.Chams.OutlineColor = cfg.FillColor
+        t.Chams.FillTransparency = cfg.FillTransparency
+        t.Chams.OutlineTransparency = cfg.OutlineTransparency
+    elseif t.Chams then 
+        pcall(function() t.Chams:Destroy() end)
+        t.Chams = nil 
+    end
     
     if t.Billboard and not t.Billboard.Parent then t.Billboard = nil; t.Label = nil end
     if cfg.TextEnabled and cfg.Enabled then
@@ -539,7 +611,10 @@ local function espEnsure(m, cfg, isKiller, myHrp)
         if hrp and myHrp then dist = math.floor((hrp.Position - myHrp.Position).Magnitude) end
         t.Label.Text = string.format("%s %s [%d]", isKiller and "[K]" or "[S]", m.Name, dist)
         t.Label.TextColor3 = cfg.FillColor
-    elseif t.Billboard then pcall(function() t.Billboard:Destroy() end); t.Billboard = nil; t.Label = nil end
+    elseif t.Billboard then 
+        pcall(function() t.Billboard:Destroy() end)
+        t.Billboard = nil; t.Label = nil 
+    end
 end
 
 local function espCollectFromFolder(folder) 
@@ -560,6 +635,9 @@ task.spawn(function()
     end
 end)
 
+-- =========================================================
+-- AUTO GEN
+-- =========================================================
 local AUTOGEN = { Enabled = false, Interval = 3, MaxDistance = 10, _thread = nil, Debug = false, SkillCheckEnabled = true, SkillCheckSpamMode = false, MemoryEnabled = true, GearEnabled = true, RotateDirection = 1 }
 local function getIngameMap() local map = Workspace:FindFirstChild("Map"); map = map and map:FindFirstChild("Ingame"); return map and map:FindFirstChild("Map") end
 local function fireInteraction(obj, args)
@@ -712,30 +790,80 @@ Lighting.ChildAdded:Connect(applyBlindnessTo)
 PlayerGui.DescendantAdded:Connect(applyInjuryTo)
 local function reapplyMisc() for _, v in ipairs(Lighting:GetDescendants()) do applyBlindnessTo(v) end; for _, v in ipairs(PlayerGui:GetDescendants()) do applyInjuryTo(v) end end
 
-local Window = Rayfield:CreateWindow({ name = "SCP Hub", subtitle = "v2.1", sidebarLayout = true, configuration = { autoSave = true, autoLoad = true, fileName = "SCPHub_v21" } })
+local Window = Rayfield:CreateWindow({ name = "SCP Hub", subtitle = "v2.3.1", sidebarLayout = true, configuration = { autoSave = true, autoLoad = true, fileName = "SCPHub_v231" } })
 
+-- =========================================================
+-- ESP TAB  (color/transparency callbacks isolated per group)
+-- =========================================================
 local ESPTab = Window:CreateTab({ name = "ESP", icon = 93364949241311 })
 ESPTab:CreateSection("Killer ESP")
 ESPTab:CreateToggle({ name = "Enable Killers ESP", default = false, callback = function(v) ESP_CFG.Killers.Enabled = v end })
 ESPTab:CreateToggle({ name = "Show Killer Names", default = false, callback = function(v) ESP_CFG.Killers.TextEnabled = v end })
-ESPTab:CreateColorPicker({ name = "Killer ESP Color", color = Color3.fromRGB(255, 40, 40), callback = function(c) ESP_CFG.Killers.FillColor = c end })
-ESPTab:CreateSlider({ name = "Killer ESP Transparency", min = 0, max = 1, default = 0.55, increment = 0.05, callback = function(v) ESP_CFG.Killers.FillTransparency = v end })
+ESPTab:CreateColorPicker({ name = "Killer ESP Color", color = Color3.fromRGB(255, 40, 40), callback = function(c) 
+    ESP_CFG.Killers.FillColor = c 
+    for _, t in pairs(ESP_TRACK) do
+        if t.IsKiller then
+            if t.Chams then t.Chams.FillColor = c; t.Chams.OutlineColor = c end
+            if t.Label then t.Label.TextColor3 = c end
+        end
+    end
+end })
+ESPTab:CreateSlider({ name = "Killer ESP Transparency", min = 0, max = 1, default = 0.55, increment = 0.05, callback = function(v) 
+    ESP_CFG.Killers.FillTransparency = v 
+    for _, t in pairs(ESP_TRACK) do
+        if t.IsKiller and t.Chams then t.Chams.FillTransparency = v end
+    end
+end })
 ESPTab:CreateSection("Survivor ESP")
 ESPTab:CreateToggle({ name = "Enable Survivors ESP", default = false, callback = function(v) ESP_CFG.Survivors.Enabled = v end })
 ESPTab:CreateToggle({ name = "Show Survivor Names", default = false, callback = function(v) ESP_CFG.Survivors.TextEnabled = v end })
-ESPTab:CreateColorPicker({ name = "Survivor ESP Color", color = Color3.fromRGB(40, 255, 90), callback = function(c) ESP_CFG.Survivors.FillColor = c end })
-ESPTab:CreateSlider({ name = "Survivor ESP Transparency", min = 0, max = 1, default = 0.55, increment = 0.05, callback = function(v) ESP_CFG.Survivors.FillTransparency = v end })
+ESPTab:CreateColorPicker({ name = "Survivor ESP Color", color = Color3.fromRGB(40, 255, 90), callback = function(c) 
+    ESP_CFG.Survivors.FillColor = c 
+    for _, t in pairs(ESP_TRACK) do
+        if t.IsKiller == false then
+            if t.Chams then t.Chams.FillColor = c; t.Chams.OutlineColor = c end
+            if t.Label then t.Label.TextColor3 = c end
+        end
+    end
+end })
+ESPTab:CreateSlider({ name = "Survivor ESP Transparency", min = 0, max = 1, default = 0.55, increment = 0.05, callback = function(v) 
+    ESP_CFG.Survivors.FillTransparency = v 
+    for _, t in pairs(ESP_TRACK) do
+        if t.IsKiller == false and t.Chams then t.Chams.FillTransparency = v end
+    end
+end })
 
+-- =========================================================
+-- AUTO BLOCK TAB
+-- =========================================================
 local ABTab = Window:CreateTab({ name = "Auto Block", icon = 93364949241311 })
 ABTab:CreateSection("Auto Block (Meowsaken Facing)")
 ABTab:CreateToggle({ name = "Enable Auto Block", default = false, callback = function(v) AB_Cfg.Enabled = v end })
 ABTab:CreateSlider({ name = "Detection Range", min = 5, max = 60, default = 20, increment = 1, callback = function(v) AB_Cfg.Range = v end })
+ABTab:CreateToggle({ name = "Facing Check", default = true, callback = function(v) facingCheckEnabled = v end })
+ABTab:CreateSlider({ name = "Facing Check Angle (Dot)", min = -1, max = 1, default = 0.3, increment = 0.05, callback = function(v) customFacingDot = v end })
 ABTab:CreateToggle({ name = "Sound Trigger", default = true, callback = function(v) AB_Cfg.SoundTrigger = v end })
 ABTab:CreateToggle({ name = "Animation Trigger", default = true, callback = function(v) AB_Cfg.AnimTrigger = v end })
-ABTab:CreateToggle({ name = "Show Facing Circle Visual", default = false, callback = function(v) 
+ABTab:CreateToggle({ name = "Show Facing Circle Visual", default = false, callback = function(v)
     facingVisualOn = v
-    for _, k in ipairs(KillersFolder:GetChildren()) do
-        if facingVisualOn then addFacingVisual(k) else removeFacingVisual(k) end
+    if not facingVisualOn then
+        -- FIX: iterate facingVisuals (not KillersFolder) for cleanup so we don't miss
+        -- stale entries when the folder was nil or a killer already left.
+        local toRemove = {}
+        for k in pairs(facingVisuals) do toRemove[#toRemove + 1] = k end
+        for _, k in ipairs(toRemove) do removeFacingVisual(k) end
+    else
+        -- FIX: guard against nil KillersFolder; fall back to live lookup.
+        local kf = KillersFolder
+        if not kf then
+            local pf = Workspace:FindFirstChild("Players")
+            kf = pf and pf:FindFirstChild("Killers")
+        end
+        if kf then
+            for _, k in ipairs(kf:GetChildren()) do
+                if k:IsA("Model") then addFacingVisual(k) end
+            end
+        end
     end
 end })
 ABTab:CreateButton({ name = "Block Now", callback = function() print("[AB] manual block:", fireBlockNow()) end })
@@ -808,4 +936,4 @@ MiscTab:CreateButton({ name = "Reset Character", callback = function() local h =
 
 _G.SCPHubInput = UIS.InputBegan:Connect(function(input, gpe) if gpe then return end; if input.KeyCode == Enum.KeyCode.Q then pcall(function() HDT_Trigger(true) end) end end)
 
-Window:Notify({ title = "SCP Hub", content = "Loaded · v2.1 · Boxes Removed, Circle Restored", duration = 3 })
+Window:Notify({ title = "SCP Hub", content = "Loaded · v2.3.1 · Facing Disk + ESP Isolation + KillersFolder Guard", duration = 3 })

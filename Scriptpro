@@ -1,4 +1,4 @@
--- SCP Hub v1.94 — Final Polish (Fixed Auto Gen Kick, Box Walk, Aimlock, Auto Block)
+-- SCP Hub v1.97 — Integrated User's Custom Box Maker
 repeat task.wait() until game:IsLoaded()
 
 local Players           = game:GetService("Players")
@@ -85,61 +85,33 @@ end
 local firesignalF = (typeof(firesignal) == "function") and firesignal or rawget(getfenv(), "FireSignal") or rawget(getfenv(), "firesignal")
 
 -- =========================================================
--- STRICT M1 FILTER (Exact Reference)
+-- CUSTOM ANIMATION ID LIST
 -- =========================================================
-local BlockableAttacks = {
-    slash = true, enragedslash = true, stab = true, 
-    attack = true, punch = true, swing = true, golemslash = true
+local ANIM_IDS = {
+    "114506382930939", "127245564598429", "99829427721752",
+    "138938529389204", "111647315359080", "92567970681901",
+    "124269076578545", "94958041603347", "109667959938617",
+    "130958529065375", "118298475669935", "126830014841198",
+    "18885909645", "98456918873918", "105458270463374",
+    "83829782357897", "125403313786645", "82113744478546",
+    "70371667919898", "99135633258223", "7167027849946",
+    "109230267448394", "139835501033932", "126996426760253",
+    "88451353906104", "106538427162796", "122709416391891",
+    "139309647473555", "90620531468240", "91509234639766",
+    "99824350842479", "126171487400618", "101101433684051",
+    "106860049270347", "70483423693126", "126727756047566",
+    "137642639873297", "77375846492436", "121293883585738",
+    "81639435858902", "137314737492715", "92173139187970",
+    "108196996477620", "90819435118493", "123172382755876"
 }
 
-local function isM1Name(name)
-    if not name then return false end
-    local lname = string.lower(name)
-    for atk in pairs(BlockableAttacks) do
-        if lname:find(atk, 1, true) then return true end
-    end
-    return false
-end
-
-local ATTACK_ANIM_MAP = {}
-local function buildAttackAnimMap()
-    local assets = ReplicatedStorage:FindFirstChild("Assets")
-    local killers = assets and assets:FindFirstChild("Killers")
-    if not killers then return end
-    for _, km in ipairs(killers:GetChildren()) do
-        local cfg = km:FindFirstChild("Config")
-        if cfg and cfg:IsA("ModuleScript") then
-            local ok, data = pcall(require, cfg)
-            if ok and type(data) == "table" then
-                local anims = data.Animations or (data.Config and data.Config.Animations)
-                if type(anims) == "table" then
-                    for abilityName, animValue in pairs(anims) do
-                        local lname = string.lower(abilityName)
-                        local ids = {}
-                        local function collect(v)
-                            if type(v) == "string" then local id = v:match("(%d+)"); if id then table.insert(ids, id) end
-                            elseif type(v) == "number" then table.insert(ids, tostring(v))
-                            elseif type(v) == "table" then for _, x in pairs(v) do collect(x) end end
-                        end
-                        collect(animValue)
-                        for _, id in ipairs(ids) do ATTACK_ANIM_MAP[id] = lname end
-                    end
-                end
-            end
-        end
-    end
-end
-buildAttackAnimMap()
-task.spawn(function() while true do task.wait(30); pcall(buildAttackAnimMap) end end)
-
-local function getAttackName(animId, animName)
-    local mapped = ATTACK_ANIM_MAP[tostring(animId)]
-    if mapped then return mapped end
-    return string.lower(animName or "")
+local IS_BLOCK_ANIM = {}
+for _, id in ipairs(ANIM_IDS) do
+    IS_BLOCK_ANIM[tostring(id)] = true
 end
 
 -- =========================================================
--- BLOCK FIRING (Exact Reference)
+-- BLOCK FIRING
 -- =========================================================
 local BlockButton = nil
 local function getBlockButton()
@@ -160,7 +132,6 @@ local function fireBlockNow()
     if now - lastBlockFire < 0.02 then return false end
     lastBlockFire = now
 
-    -- Exact Reference: FireSignal first, break if successful
     local btn = getBlockButton()
     if firesignalF and btn then
         if pcall(firesignalF, btn.MouseButton1Click) then
@@ -169,7 +140,6 @@ local function fireBlockNow()
         end
     end
 
-    -- Fallback to Remote if Signal fails
     if RemoteEvent then
         if IS_OFFICIAL_GAME then
             pcall(function() RemoteEvent:FireServer("UseActorAbility", {"Block"}) end)
@@ -192,102 +162,280 @@ local AB_Cfg = {
 }
 
 -- =========================================================
--- AUTO BLOCK HITBOX LOGIC (EXACT REFERENCE COPY)
+-- OLD SOUND BLOCK LOGIC
 -- =========================================================
-local function tryBlockWithHitbox(killer, attackName)
-    if not AB_Cfg.Enabled then return end
-    if not isSurvivor() or hasHelplessEffect() then return end
-    if not Players:GetPlayerFromCharacter(killer) then return end
+local BEHEAD_IDS = {}
+local IGNORE_BEHEAD = true
+local LOG_IDS = false
+_G.SCPHub_LastLoggedID = nil
 
-    local lname = string.lower(attackName)
-    if not BlockableAttacks[lname] then return end
+local TRIGGER_SOUNDS = {}
+for _, id in ipairs({
+    "102228729296384","140242176732868","112809109188560","136323728355613","115026634746636",
+    "84116622032112","108907358619313","127793641088496","86174610237192","95079963655241",
+    "101199185291628","119942598489800","84307400688050","113037804008732","105200830849301",
+    "75330693422988","82221759983649","81702359653578","108610718831698","112395455254818",
+    "109431876587852","109348678063422","85853080745515","12222216","105840448036441",
+    "114742322778642","119583605486352","79980897195554","71805956520207","79391273191671",
+    "89004992452376","101553872555606","101698569375359","106300477136129","116581754553533",
+    "117231507259853","119089145505438","121954639447247","125213046326879","131406927389838",
+    "71834552297085","86833981571073","110372418055226","86494585504534","80516583309685",
+    "140412278320643","117173212095661","104910828105172","140194172008986","85544168523099",
+    "114506382930939","99829427721752","120059928759346","104625283622511","105316545074913",
+    "126131675979001","82336352305186","93366464803829","84069821282466","128856426573270",
+    "128195973631079","124903763333174","94317217837143","98111231282218","136728245733659",
+    "107444859834748","76959687420003","72425554233832","96594507550917","139996647355899",
+    "107345261604889","127557531826290","108651070773439","74842815979546","124397369810639",
+    "76467993976301","118493324723683","78298577002481","116527305931161","5148302439",
+    "98675142200448","128367348686124","103684883268194","109246041199659","80540530406270",
+    "139523195429581","105204810054381","116468089135195","133709029886490","124234993291213",
+    "98733709078792","99856718263455","74809026448465","99215225043220","79612713897495",
+}) do TRIGGER_SOUNDS[id] = true end
 
-    local char = lp.Character
-    local myHb = char and char:FindFirstChild("QueryHitbox")
-    local qh = killer:FindFirstChild("QueryHitbox") or killer:WaitForChild("QueryHitbox", 0.5)
-    if not myHb or not qh then return end
+-- =========================================================
+-- USER'S CUSTOM BOX MAKER
+-- =========================================================
+local BoxCfg = {
+    Enabled = false,
+    AppearMode = "M1", -- "M1" or "Always"
+    Color = Color3.fromRGB(255, 60, 60),
+    Width = 12,
+    Height = 8,
+    Length = 30,
+    Transparency = 0.3,
+    M1Boxes = 1,
+    M1Spread = 3,
+    M1FadeTime = 1,
+    Debug = false,
+    Long = {},
+}
 
-    if AB_Cfg.Debug then print("[AB] Checking hitbox for: " .. lname) end
+local BOX_FOLDER
+local function ensureBoxFolder()
+    if BOX_FOLDER and BOX_FOLDER.Parent then
+        return BOX_FOLDER
+    end
+    local folder = Workspace:FindFirstChild("SCPHub_Boxes")
+    if not folder then
+        folder = Instance.new("Folder")
+        folder.Name = "SCPHub_Boxes"
+        folder.Parent = Workspace
+    end
+    BOX_FOLDER = folder
+    return folder
+end
 
-    local custom = nil
-    if lname == "golemslash" then
-        custom = { Size = Vector3.new(6, 2, 7), Offset = CFrame.new(0,0,-5.5) }
+local lastBoxSpawn = setmetatable({}, { __mode = "k" })
+
+local function getBoxSize()
+    return Vector3.new(
+        math.max(0.1, BoxCfg.Width),
+        math.max(0.1, BoxCfg.Height),
+        math.max(0.1, BoxCfg.Length)
+    )
+end
+
+local function createVisualBox(name, size, color, transparency)
+    local part = Instance.new("Part")
+    part.Name = name
+    part.Anchored = true
+    part.CanCollide = false
+    part.CanTouch = false
+    part.CanQuery = false
+    part.CastShadow = false
+    part.Massless = true
+    part.Material = Enum.Material.Neon
+    part.Color = color
+    part.Transparency = math.clamp(transparency, 0, 1)
+    part.Size = size
+    part.Parent = ensureBoxFolder()
+    return part
+end
+
+local function spawnM1Boxes(killer, reason, attackType)
+    if not BoxCfg.Enabled then return end
+    if BoxCfg.AppearMode ~= "M1" then return end
+    if not killer or not killer.Parent then return end
+
+    local queryHitbox = killer:FindFirstChild("QueryHitbox")
+    if not queryHitbox or not queryHitbox:IsA("BasePart") then
+        if BoxCfg.Debug then
+            warn("[Boxes] QueryHitbox not found:", killer.Name)
+        end
+        return
     end
 
-    local selfParams = OverlapParams.new()
-    selfParams.MaxParts = 1
-    selfParams.FilterType = Enum.RaycastFilterType.Include
-    selfParams.FilterDescendantsInstances = { myHb }
+    local now = os.clock()
+    if lastBoxSpawn[killer] and now - lastBoxSpawn[killer] < 0.1 then return end
+    lastBoxSpawn[killer] = now
 
-    local hitboxesFolder = workspace:FindFirstChild("Hitboxes") or workspace
+    local count = math.clamp(math.floor(tonumber(BoxCfg.M1Boxes) or 1), 1, 20)
+    local fadeTime = math.max(0.3, tonumber(BoxCfg.M1FadeTime) or 1)
+    local size = getBoxSize()
+    local baseCF = queryHitbox.CFrame
 
-    -- Exact Reference: 12 iterations, 0.02s wait
-    for i = 1, 12 do
-        if not AB_Cfg.Enabled then break end
-        if not char or not char.Parent or not qh or not qh.Parent then break end
-        
-        local part = Instance.new("Part")
-        part.Name = "SCPHubBlockProbe"
-        part.Anchored = true
-        part.CanCollide = false
-        part.CanTouch = false
-        part.CanQuery = false
-        part.CastShadow = false
-        part.Material = Enum.Material.ForceField
-        part.Size = (custom and custom.Size or Vector3.new(5.2, 6, 5.65)) * 2.2
-        part.CFrame = qh.CFrame * (custom and custom.Offset or CFrame.new(0,0,-3.5))
-        part.Transparency = 1
-        part.Parent = hitboxesFolder
-        Debris:AddItem(part, 0.4)
+    for i = 1, count do
+        local part = createVisualBox("SCPHubM1Box", size, BoxCfg.Color, BoxCfg.Transparency)
+        local spread = (i - (count + 1) / 2) * BoxCfg.M1Spread
+        part.CFrame = baseCF * CFrame.new(spread, 0, 0)
 
-        local hits = workspace:GetPartsInPart(part, selfParams)
-        if #hits > 0 then
-            if fireBlockNow() then
-                if AB_Cfg.Debug then print("[AB] Blocked " .. lname .. " at step " .. i) end
-                break
+        TweenService:Create(
+            part,
+            TweenInfo.new(fadeTime, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+            { Transparency = 1 }
+        ):Play()
+
+        Debris:AddItem(part, fadeTime + 0.1)
+    end
+
+    if BoxCfg.Debug then
+        print("[Boxes] Spawned", count, "boxes for", killer.Name, "reason:", tostring(reason))
+    end
+end
+
+local function destroyLongBox(killer)
+    local data = BoxCfg.Long[killer]
+    if not data then return end
+    if data.part then data.part:Destroy() end
+    if data.hl then data.hl:Destroy() end
+    if data.conn then data.conn:Disconnect() end
+    BoxCfg.Long[killer] = nil
+end
+
+local function createLongBox(killer)
+    if not killer or not killer:IsA("Model") then return end
+    destroyLongBox(killer)
+
+    local part = createVisualBox("SCPHubLong_" .. killer.Name, getBoxSize(), BoxCfg.Color, BoxCfg.Transparency)
+
+    local highlight = Instance.new("Highlight")
+    highlight.Name = "SCPHubLongBoxHL"
+    highlight.Adornee = part
+    highlight.FillColor = BoxCfg.Color
+    highlight.OutlineColor = BoxCfg.Color
+    highlight.FillTransparency = 1
+    highlight.OutlineTransparency = 0
+    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    highlight.Parent = part
+
+    local data = { part = part, hl = highlight, conn = nil }
+    BoxCfg.Long[killer] = data
+
+    data.conn = RunService.Heartbeat:Connect(function()
+        if not killer.Parent or not part.Parent then
+            destroyLongBox(killer)
+            return
+        end
+
+        local root = killer:FindFirstChild("HumanoidRootPart")
+        if root then
+            part.CFrame = root.CFrame
+        else
+            part.CFrame = killer:GetPivot()
+        end
+
+        part.Size = getBoxSize()
+        part.Color = BoxCfg.Color
+
+        local visible = BoxCfg.Enabled and BoxCfg.AppearMode == "Always"
+        part.Transparency = visible and math.clamp(BoxCfg.Transparency, 0, 1) or 1
+
+        highlight.FillColor = BoxCfg.Color
+        highlight.OutlineColor = BoxCfg.Color
+        highlight.OutlineTransparency = visible and 0 or 1
+    end)
+end
+
+local function ensureBoxes()
+    local playersFolder = Workspace:FindFirstChild("Players")
+    local killersFolder = playersFolder and playersFolder:FindFirstChild("Killers")
+
+    if not killersFolder then
+        for killer in pairs(BoxCfg.Long) do destroyLongBox(killer) end
+        return
+    end
+
+    local existing = {}
+    for _, killer in ipairs(killersFolder:GetChildren()) do
+        if killer:IsA("Model") then
+            existing[killer] = true
+            if BoxCfg.Enabled and BoxCfg.AppearMode == "Always" then
+                if not BoxCfg.Long[killer] then createLongBox(killer) end
+            elseif BoxCfg.Long[killer] then
+                destroyLongBox(killer)
             end
         end
-        task.wait(0.02)
+    end
+
+    for killer in pairs(BoxCfg.Long) do
+        if not existing[killer] then destroyLongBox(killer) end
     end
 end
 
 -- =========================================================
--- TRIGGERS
+-- TRIGGER LOGIC (Connecting Sound/Anim to Blocks & Boxes)
 -- =========================================================
 local hookedSounds = setmetatable({}, { __mode = "k" })
+local lastSoundFire = setmetatable({}, { __mode = "k" })
 local hookedAnims = setmetatable({}, { __mode = "k" })
 
 local function onSoundTrigger(sound)
-    if not AB_Cfg.Enabled or not AB_Cfg.SoundTrigger then return end
-    local soundName = string.lower(sound.Name)
-    if isM1Name(soundName) then
-        local killer = sound:FindFirstAncestorOfClass("Model")
-        if killer then
-            task.spawn(function() tryBlockWithHitbox(killer, soundName) end)
-        end
+    local now = tick()
+    if lastSoundFire[sound] and now - lastSoundFire[sound] < 0.04 then return end
+    lastSoundFire[sound] = now
+    
+    local id = sound.SoundId and tostring(sound.SoundId):match("(%d+)")
+    if not id or not TRIGGER_SOUNDS[id] then return end
+    if BEHEAD_IDS[id] and IGNORE_BEHEAD then return end
+
+    local killer = sound:FindFirstAncestorOfClass("Model")
+    if not killer then return end
+    local pf = Workspace:FindFirstChild("Players")
+    local kf = pf and pf:FindFirstChild("Killers")
+    if not kf or killer.Parent ~= kf then return end
+
+    _G.SCPHubLastLoggedID = id
+    if LOG_IDS then print("[SCP Hub] Sound: " .. id .. " | Killer: " .. killer.Name) end
+
+    if BoxCfg.Enabled and BoxCfg.AppearMode == "M1" then
+        spawnM1Boxes(killer, "sound:" .. id, "sound")
     end
+
+    if not AB_Cfg.Enabled or not AB_Cfg.SoundTrigger then return end
+    if not isSurvivor() or hasHelplessEffect() then return end
+    fireBlockNow()
 end
 
 local function hookSound(sound)
     if hookedSounds[sound] then return end
     hookedSounds[sound] = true
-    sound.Played:Connect(function() onSoundTrigger(sound) end)
+    local conn = sound.Played:Connect(function() onSoundTrigger(sound) end)
+    sound.Destroying:Once(function()
+        hookedSounds[sound] = nil; lastSoundFire[sound] = nil
+        pcall(function() conn:Disconnect() end)
+    end)
+    if sound.IsPlaying then onSoundTrigger(sound) end
 end
 
 local function onAnimTrigger(track, killer)
-    if not AB_Cfg.Enabled or not AB_Cfg.AnimTrigger then return end
     local anim = track.Animation
     if not anim then return end
     
     local animId = tostring(anim.AnimationId):match("(%d+)")
-    local atkName = getAttackName(animId, anim.Name)
+    if not animId then return end
     
-    if BlockableAttacks[atkName] then
-        task.spawn(function() tryBlockWithHitbox(killer, atkName) end)
+    if IS_BLOCK_ANIM[animId] then
+        if BoxCfg.Enabled and BoxCfg.AppearMode == "M1" then
+            spawnM1Boxes(killer, "anim:" .. animId, "anim")
+        end
+        
+        if not AB_Cfg.Enabled or not AB_Cfg.AnimTrigger then return end
+        if not isSurvivor() or hasHelplessEffect() then return end
+        fireBlockNow()
     end
 end
 
-local function hookKiller(killer)
+local function hookKillerAnims(killer)
     local hum = killer:FindFirstChildOfClass("Humanoid")
     local animator = hum and hum:FindFirstChildOfClass("Animator")
     if animator and not hookedAnims[animator] then
@@ -297,168 +445,7 @@ local function hookKiller(killer)
 end
 
 -- =========================================================
--- Box System (Fixed to STRICTLY only spawn on M1)
--- =========================================================
-local BoxCfg = { Enabled = false, AppearMode = "M1", Color = Color3.fromRGB(255, 60, 60), Width = 12, Height = 8, Length = 30, Transparency = 0.3, M1Boxes = 1, M1Spread = 3, M1FadeTime = 1, Debug = false, Long = {} }
-local BOX_FOLDER = nil
-
-local function ensureBoxFolder() 
-    if BOX_FOLDER and BOX_FOLDER.Parent then return BOX_FOLDER end 
-    local f = Workspace:FindFirstChild("SCPHub_Boxes") 
-    if not f then 
-        f = Instance.new("Folder")
-        f.Name = "SCPHub_Boxes"
-        f.Parent = Workspace 
-    end 
-    BOX_FOLDER = f 
-    return f 
-end
-
-local lastBoxSpawn = setmetatable({}, { __mode = "k" })
-
-local function spawnM1Boxes(killer, attackType)
-    if not killer or not killer.Parent then return end
-    local qh = killer:FindFirstChild("QueryHitbox")
-    if not qh then return end
-    
-    local now = tick()
-    if lastBoxSpawn[killer] and now - lastBoxSpawn[killer] < 0.1 then return end
-    lastBoxSpawn[killer] = now
-    
-    local folder = ensureBoxFolder()
-    local count = math.max(1, math.floor(BoxCfg.M1Boxes))
-    
-    local custom = nil
-    if attackType == "golemslash" then
-        custom = { Size = Vector3.new(6, 2, 7), Offset = CFrame.new(0,0,-5.5) }
-    end
-    local visualSize = (custom and custom.Size or Vector3.new(5.2, 6, 5.65)) * 2.2
-    local baseCF = qh.CFrame * (custom and custom.Offset or CFrame.new(0,0,-3.5))
-    
-    for i = 1, count do
-        local p = Instance.new("Part")
-        p.Name = "SCPHubM1Box"
-        p.Anchored = true
-        p.CanCollide = false
-        p.CanTouch = false
-        p.CanQuery = false
-        p.CastShadow = false
-        p.Massless = true
-        p.Material = Enum.Material.Neon
-        p.Color = BoxCfg.Color
-        p.Transparency = 0.15
-        p.Size = visualSize
-        p.CFrame = baseCF * CFrame.new((i - (count + 1) / 2) * BoxCfg.M1Spread, 0, 0)
-        p.Parent = folder
-        
-        TweenService:Create(p, TweenInfo.new(math.max(0.3, BoxCfg.M1FadeTime), Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Transparency = 1 }):Play()
-        Debris:AddItem(p, BoxCfg.M1FadeTime + 0.1)
-    end
-end
-
-local function hookKillerM1Box(killer)
-    local hum = killer:FindFirstChildOfClass("Humanoid")
-    local animator = hum and hum:FindFirstChildOfClass("Animator")
-    if not animator then return end
-    
-    animator.AnimationPlayed:Connect(function(track) 
-        if not BoxCfg.Enabled or BoxCfg.AppearMode ~= "M1" then return end
-        local anim = track.Animation
-        if not anim then return end
-        
-        local animId = tostring(anim.AnimationId):match("(%d+)")
-        local atkName = getAttackName(animId, anim.Name)
-        
-        -- FIX: ONLY spawn if it is an actual M1 attack, ignoring Walk, Run, Idle.
-        if BlockableAttacks[atkName] then
-            spawnM1Boxes(killer, atkName) 
-        end
-    end)
-end
-
-local function destroyLongBox(killer) 
-    local d = BoxCfg.Long[killer]
-    if not d then return end
-    if d.part and d.part.Parent then pcall(function() d.part:Destroy() end) end
-    if d.hl and d.hl.Parent then pcall(function() d.hl:Destroy() end) end
-    if d.conn then pcall(function() d.conn:Disconnect() end) end
-    BoxCfg.Long[killer] = nil 
-end
-
-local function createLongBox(killer)
-    if not killer or not killer:IsA("Model") then return end
-    destroyLongBox(killer)
-    
-    local folder = ensureBoxFolder()
-    local part = Instance.new("Part")
-    part.Name = "SCPHubLong_" .. killer.Name
-    part.Anchored = true
-    part.CanCollide = false
-    part.CanTouch = false
-    part.CanQuery = false
-    part.Massless = true
-    part.CastShadow = false
-    part.Material = Enum.Material.Neon
-    part.Color = BoxCfg.Color
-    part.Size = Vector3.new(BoxCfg.Width, BoxCfg.Height, BoxCfg.Length)
-    part.Transparency = BoxCfg.Transparency
-    
-    local hrp = killer:FindFirstChild("HumanoidRootPart")
-    if hrp then 
-        part.CFrame = CFrame.lookAt(hrp.Position + hrp.CFrame.LookVector * (BoxCfg.Length * 0.5), hrp.Position + hrp.CFrame.LookVector * (BoxCfg.Length * 0.5 + 1))
-    else 
-        part.CFrame = killer:GetPivot() 
-    end
-    part.Parent = folder
-    
-    local hl = Instance.new("Highlight")
-    hl.Name = "SCPHubLongBoxHL"
-    hl.Adornee = part
-    hl.FillColor = BoxCfg.Color
-    hl.OutlineColor = BoxCfg.Color
-    hl.FillTransparency = 1
-    hl.OutlineTransparency = 0
-    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    hl.Parent = part
-    
-    local data = { part = part, hl = hl, conn = nil }
-    BoxCfg.Long[killer] = data
-    
-    data.conn = RunService.Heartbeat:Connect(function()
-        if not killer.Parent or not part.Parent then destroyLongBox(killer); return end
-        local h = killer:FindFirstChild("HumanoidRootPart")
-        if h then 
-            part.CFrame = CFrame.lookAt(h.Position + h.CFrame.LookVector * (BoxCfg.Length * 0.5), h.Position + h.CFrame.LookVector * (BoxCfg.Length * 0.5 + 1)) 
-        end
-        part.Size = Vector3.new(BoxCfg.Width, BoxCfg.Height, BoxCfg.Length)
-        part.Color = BoxCfg.Color
-        local show = BoxCfg.Enabled and BoxCfg.AppearMode == "Always"
-        part.Transparency = show and BoxCfg.Transparency or 1
-        if hl and hl.Parent then 
-            hl.FillColor = BoxCfg.Color
-            hl.OutlineColor = BoxCfg.Color
-            hl.OutlineTransparency = show and 0 or 1 
-        end
-    end)
-end
-
-local function ensureBoxes()
-    local pf = Workspace:FindFirstChild("Players")
-    local kf = pf and pf:FindFirstChild("Killers")
-    if not kf then return end
-    for _, k in ipairs(kf:GetChildren()) do 
-        if k:IsA("Model") then 
-            if BoxCfg.Enabled and BoxCfg.AppearMode == "Always" and not BoxCfg.Long[k] then 
-                createLongBox(k) 
-            elseif (not BoxCfg.Enabled or BoxCfg.AppearMode ~= "Always") and BoxCfg.Long[k] then 
-                destroyLongBox(k) 
-            end 
-        end 
-    end
-end
-
--- =========================================================
--- Killer Watcher
+-- Killer Watcher Loop
 -- =========================================================
 task.spawn(function()
     local lastK
@@ -477,16 +464,10 @@ task.spawn(function()
                     if d:IsA("Sound") then hookSound(d) end 
                 end)
                 for _, k in ipairs(kf:GetChildren()) do
-                    if k:IsA("Model") then 
-                        hookKiller(k)
-                        hookKillerM1Box(k) 
-                    end
+                    if k:IsA("Model") then hookKillerAnims(k) end
                 end
                 kf.ChildAdded:Connect(function(k) 
-                    if k:IsA("Model") then 
-                        hookKiller(k)
-                        hookKillerM1Box(k) 
-                    end 
+                    if k:IsA("Model") then hookKillerAnims(k) end 
                 end)
             end
             if kf then ensureBoxes() end
@@ -495,7 +476,7 @@ task.spawn(function()
 end)
 
 -- =========================================================
--- ESP (Full Restore)
+-- ESP
 -- =========================================================
 local ESP_CFG = { 
     Killers = { Enabled=false, TextEnabled=false, FillColor=Color3.fromRGB(255,40,40), OutlineColor=Color3.new(1,1,1), FillTransparency=0.55, OutlineTransparency=0 }, 
@@ -605,7 +586,7 @@ task.spawn(function()
 end)
 
 -- =========================================================
--- Auto Gen (Fixed Anti-Cheat Kick / Bugging)
+-- Auto Gen
 -- =========================================================
 local AUTOGEN = { Enabled = false, Interval = 3, MaxDistance = 10, _thread = nil, Debug = false, SkillCheckEnabled = true, SkillCheckSpamMode = false, MemoryEnabled = true, GearEnabled = true, RotateDirection = 1 }
 
@@ -643,7 +624,6 @@ local function fireInteraction(obj, args)
     return fired
 end
 
--- EXACT REFERENCE PUZZLE UI CHECK
 local function isPuzzleActive()
     local ui = PlayerGui:FindFirstChild("PuzzleUI")
     local template = ReplicatedStorage:FindFirstChild("PuzzleUI", true)
@@ -725,33 +705,22 @@ local function autogenLoop()
         while AUTOGEN.Enabled do
             pcall(function()
                 if AUTOGEN.SkillCheckEnabled and handleSkillCheck() then return end
-                
-                -- ANTI-CHEAT FIX: Only fire if the puzzle UI is active
                 if not isPuzzleActive() then return end
-                
                 local map = getIngameMap()
                 local mr = getMyRoot()
                 if not map or not mr then return end
-                
                 local pos = mr.Position
                 local gens = {}
                 pcall(function() gens = map:QueryDescendants("Model#Generator:has(#Main)") end)
-                
                 for _, obj in ipairs(gens) do 
                     local main = obj:FindFirstChild("Main")
                     local prog = obj:FindFirstChild("Progress")
                     if main and main:IsA("BasePart") and (main.Position - pos).Magnitude <= AUTOGEN.MaxDistance and (not prog or prog.Value ~= 100) then 
-                        
-                        -- Target the exact remote
                         local Remotes = obj:FindFirstChild("Remotes")
                         local RemoteEvent = Remotes and Remotes:FindFirstChildOfClass("RemoteEvent")
-                        if RemoteEvent then
-                            pcall(function() RemoteEvent:FireServer() end)
-                        else
-                            fireInteraction(obj)
-                        end
-                        
-                        task.wait(AUTOGEN.Interval) -- Safe wait between fires
+                        if RemoteEvent then pcall(function() RemoteEvent:FireServer() end)
+                        else fireInteraction(obj) end
+                        task.wait(AUTOGEN.Interval)
                     end 
                 end
             end)
@@ -898,9 +867,9 @@ local function reapplyMisc() for _, v in ipairs(Lighting:GetDescendants()) do ap
 -- =========================================================
 local Window = Rayfield:CreateWindow({ 
     name = "SCP Hub", 
-    subtitle = "v1.94", 
+    subtitle = "v1.97", 
     sidebarLayout = true, 
-    configuration = { autoSave = true, autoLoad = true, fileName = "SCPHub_v194" } 
+    configuration = { autoSave = true, autoLoad = true, fileName = "SCPHub_v197" } 
 })
 
 -- FULL ESP TAB
@@ -920,10 +889,14 @@ ESPTab:CreateSlider({ name = "Survivor ESP Transparency", min = 0, max = 1, defa
 local ABTab = Window:CreateTab({ name = "Auto Block", icon = 93364949241311 })
 ABTab:CreateSection("Auto Block")
 ABTab:CreateToggle({ name = "Enable Auto Block", default = false, callback = function(v) AB_Cfg.Enabled = v end })
-ABTab:CreateToggle({ name = "Animation Trigger", default = true, callback = function(v) AB_Cfg.AnimTrigger = v end })
 ABTab:CreateToggle({ name = "Sound Trigger", default = true, callback = function(v) AB_Cfg.SoundTrigger = v end })
+ABTab:CreateToggle({ name = "Animation Trigger", default = true, callback = function(v) AB_Cfg.AnimTrigger = v end })
 ABTab:CreateToggle({ name = "Debug Logging", default = false, callback = function(v) AB_Cfg.Debug = v; BLOCK_Cfg.Debug = v; BoxCfg.Debug = v end })
 ABTab:CreateButton({ name = "Block Now", callback = function() print("[AB] manual block:", fireBlockNow()) end })
+ABTab:CreateSection("Behead")
+ABTab:CreateToggle({ name = "Ignore Behead Sounds", default = true, callback = function(v) IGNORE_BEHEAD = v end })
+ABTab:CreateToggle({ name = "Log Sound IDs", default = false, callback = function(v) LOG_IDS = v end })
+ABTab:CreateButton({ name = "Mark Last as Behead", callback = function() if _G.SCPHub_LastLoggedID then BEHEAD_IDS[_G.SCPHub_LastLoggedID] = true end end })
 
 local HMT_Tab = Window:CreateTab({ name = "HMT", icon = 93364949241311 })
 HMT_Tab:CreateSection("Hitbox Moving Tech")
@@ -944,12 +917,12 @@ BoxTab:CreateDropdown({ name = "Appear Mode", options = { "M1", "Always" }, defa
 BoxTab:CreateColorPicker({ name = "Box Color", color = Color3.fromRGB(255, 60, 60), callback = function(c) BoxCfg.Color = c end })
 BoxTab:CreateSlider({ name = "Transparency", min = 0, max = 1, default = 0.3, increment = 0.05, callback = function(v) BoxCfg.Transparency = v end })
 BoxTab:CreateToggle({ name = "Debug Logging", default = false, callback = function(v) BoxCfg.Debug = v end })
-BoxTab:CreateButton({ name = "Test Box (nearest killer)", callback = function() local pf = Workspace:FindFirstChild("Players"); local kf = pf and pf:FindFirstChild("Killers"); if not kf then return end; local myRoot = getMyRoot(); local best, bd = nil, math.huge; for _, k in ipairs(kf:GetChildren()) do if k:IsA("Model") then local hrp = k:FindFirstChild("HumanoidRootPart"); if hrp and myRoot then local d = (hrp.Position - myRoot.Position).Magnitude; if d < bd then bd = d; best = k end end end end; if best then spawnM1Boxes(best, nil) end end })
+BoxTab:CreateButton({ name = "Test Box (nearest killer)", callback = function() local pf = Workspace:FindFirstChild("Players"); local kf = pf and pf:FindFirstChild("Killers"); if not kf then return end; local myRoot = getMyRoot(); local best, bd = nil, math.huge; for _, k in ipairs(kf:GetChildren()) do if k:IsA("Model") then local hrp = k:FindFirstChild("HumanoidRootPart"); if hrp and myRoot then local d = (hrp.Position - myRoot.Position).Magnitude; if d < bd then bd = d; best = k end end end end; if best then spawnM1Boxes(best, "test", nil) end end })
 BoxTab:CreateSection("M1 Boxes (transient)")
 BoxTab:CreateSlider({ name = "Boxes per M1", min = 1, max = 10, default = 1, increment = 1, callback = function(v) BoxCfg.M1Boxes = v end })
 BoxTab:CreateSlider({ name = "Spread", min = 0, max = 20, default = 3, increment = 1, callback = function(v) BoxCfg.M1Spread = v end })
 BoxTab:CreateSlider({ name = "Fade Time (0.1s steps)", min = 1, max = 30, default = 10, increment = 1, callback = function(v) BoxCfg.M1FadeTime = v / 10 end })
-BoxTab:CreateSection("Always Box")
+BoxTab:CreateSection("Always Box Dimensions")
 BoxTab:CreateSlider({ name = "Width", min = 1, max = 60, default = 12, increment = 1, callback = function(v) BoxCfg.Width = v end })
 BoxTab:CreateSlider({ name = "Length", min = 1, max = 120, default = 30, increment = 1, callback = function(v) BoxCfg.Length = v end })
 BoxTab:CreateSlider({ name = "Height", min = 1, max = 30, default = 8, increment = 1, callback = function(v) BoxCfg.Height = v end })
@@ -1014,4 +987,4 @@ MiscTab:CreateButton({ name = "Reset Character", callback = function() local h =
 
 _G.SCPHubInput = UIS.InputBegan:Connect(function(input, gpe) if gpe then return end; if input.KeyCode == Enum.KeyCode.Q then pcall(function() HDT_Trigger(true) end) end end)
 
-Window:Notify({ title = "SCP Hub", content = "Loaded · v1.94 · Final Polish", duration = 3 })
+Window:Notify({ title = "SCP Hub", content = "Loaded · v1.97 · Custom Box Maker Applied", duration = 3 })

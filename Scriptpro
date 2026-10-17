@@ -1,9 +1,4 @@
--- SCP Hub v1.81 — Non-M1 name priority · anim-ID blacklist · fast block
--- · Blocklist always wins over M1 keyword match
--- · Shared anim IDs used by non-M1 abilities are hard-blocked
--- · Sound names matching non-M1 keywords are rejected up front
--- · Strict M1-only Auto Block · cached refs · reused hitbox part
-
+-- SCP Hub v1.84 — Box fixed · sound+anim M1 trigger · own folder · debug · BUGFIX PASS
 repeat task.wait() until game:IsLoaded()
 
 -- =========================================================
@@ -27,9 +22,12 @@ if not PlayerGui then
     PlayerGui = lp:FindFirstChildOfClass("PlayerGui")
 end
 
--- =========================================================
--- Rayfield Gen 2
--- =========================================================
+-- Re-run safety: unbind render-step, disconnect global input
+pcall(function()
+    if _G.SCPHubInput then _G.SCPHubInput:Disconnect(); _G.SCPHubInput = nil end
+end)
+pcall(RunService.UnbindFromRenderStep, RunService, "SCPHubAim")
+
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/gen2"))()
 
 -- =========================================================
@@ -39,7 +37,6 @@ local MainUI = PlayerGui:WaitForChild("MainUI", 120)
 local PlayersFolder   = Workspace:FindFirstChild("Players")
 local KillersFolder   = PlayersFolder and PlayersFolder:FindFirstChild("Killers") or nil
 local SurvivorsFolder = PlayersFolder and PlayersFolder:FindFirstChild("Survivors") or nil
-local HitboxesFolder  = Workspace:FindFirstChild("Hitboxes")
 
 local RemoteEvent
 do
@@ -62,10 +59,7 @@ local BLOCK_BUF = buildBuffer("Block")
 -- Cached player state
 -- =========================================================
 local cachedChar, cachedRoot, cachedHb = nil, nil, nil
-
-local function invalidateCharCache()
-    cachedChar, cachedRoot, cachedHb = nil, nil, nil
-end
+local function invalidateCharCache() cachedChar, cachedRoot, cachedHb = nil, nil, nil end
 lp.CharacterAdded:Connect(invalidateCharCache)
 lp.CharacterRemoving:Connect(invalidateCharCache)
 
@@ -92,18 +86,31 @@ end
 local function isSurvivor() return getMyRole() == "Survivors" end
 
 local function hasHelplessEffect()
-    local char = lp.Character; if not char then return true end
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if hum and hum.PlatformStand then return true end
+    local char = lp.Character
+    if not char then return true end
     if char:GetAttribute("Helpless") then return true end
+    if char:GetAttribute("Grabbed") then return true end
+    if char:GetAttribute("Incapacitated") then return true end
+    if char:GetAttribute("BeingCarried") then return true end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum and hum.PlatformStand then
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if hrp and hrp.AssemblyLinearVelocity.Magnitude < 2 then return true end
+    end
     return false
+end
+
+local function isLocalPlayerChar(m)
+    if not m then return true end
+    if m == lp.Character then return true end
+    return Players:GetPlayerFromCharacter(m) == lp
 end
 
 local firesignalF = (typeof(firesignal) == "function") and firesignal
     or rawget(getfenv(), "FireSignal") or rawget(getfenv(), "firesignal")
 
 -- =========================================================
--- M1 NAME FILTER
+-- M1 name filter
 -- =========================================================
 local M1_EXACT = {
     ["slash"]=true, ["enragedslash"]=true, ["golemslash"]=true,
@@ -126,49 +133,33 @@ local M1_SUBSTRINGS = {
     "chop", "slam", "swipe", "kick", "smash", "cleave", "rend",
     "melee", "carving", "lacerate",
 }
--- Blocklist ALWAYS wins over M1 keyword match.
 local M1_BLOCKLIST = {
-    -- Slasher / Jason
     "behead", "gashingwound", "ragingpace",
-    -- c00lkidd
     "corruptnature", "walkspeedoverride", "pizzadelivery",
-    -- John Doe
     "corruptenergy", "digitalfootprint", "404error",
     "naturalmalevolence", "unstoppable",
-    -- Noli
     "voidrush", "nova", "observant", "hallucination", "prankster",
     "fakegenerator",
-    -- 1x1x1x1
     "massinfection", "entanglement", "unstableeye",
     "rejuvenatetherotten", "rejuvenate", "rotting",
-    -- Guest 666 / Sixer
     "eviscerate", "demonicpursuit", "infernalcry",
     "bloodrush", "bloodhunt", "bloodhound",
     "manicfixation", "hellforgedwill",
-    -- Nosferatu
     "bloodhook", "cataclysm", "huntersfeast", "ascension", "levitation",
-    -- Azure
     "senescence", "allseeing", "explorer", "sacrifice",
-    -- Michael Myers
     "shapejump", "killersense", "detectionpulse", "realitytear",
-    -- Leatherface
     "maimattack", "cyclecharge",
-    -- Generic non-M1 states
     "grab", "throw", "carry", "wall", "idle", "walk", "run", "jump",
     "stun", "hurt", "hitreact", "flash", "stagger", "flee",
     "death", "dead", "die", "kill", "execute", "finish",
 }
 
--- Normalize: lowercase, strip spaces / underscores / hyphens.
--- "Behead-Hit" -> "beheadhit" -> contains "behead" -> blocklisted.
 local function normalizeName(name)
     return tostring(name or ""):lower():gsub("%s", ""):gsub("_", ""):gsub("%-", "")
 end
-
 local function isM1Name(name)
     if not name or name == "" then return false end
     local lname = normalizeName(name)
-    -- Blocklist first so a name like "BeheadHit" cannot be rescued by "hit".
     for _, kw in ipairs(M1_BLOCKLIST) do
         if lname:find(kw, 1, true) then return false end
     end
@@ -179,17 +170,29 @@ local function isM1Name(name)
     return false
 end
 
+-- ---------------------------------------------------------
+-- BUGFIX #8: M1 hitbox size was ~17x19x18 studs (over-triggering).
+-- Reduction: base scale 1.4 + 1 stud per-axis buffer.
+-- ---------------------------------------------------------
 local M1_HITBOX_SIZE = Vector3.new(5.2, 6, 5.65)
 local M1_HITBOX_OFFSET = CFrame.new(0, 0, -3.5)
+local M1_SCALE = 1.4
+local M1_PAD   = 1.0
 local CUSTOM_HITBOXES = {
     ["golemslash"] = { Size = Vector3.new(6, 2, 7), Offset = CFrame.new(0, 0, -5.5) },
 }
 
+local function getM1HitboxSize(attackType)
+    local custom = attackType and CUSTOM_HITBOXES[attackType]
+    local base = custom and custom.Size or M1_HITBOX_SIZE
+    return base * M1_SCALE + Vector3.new(M1_PAD, M1_PAD, M1_PAD)
+end
+
 -- =========================================================
--- Animation map build  (M1 + non-M1 hard-block list)
+-- Animation map (M1 + non-M1 hard-block list)
 -- =========================================================
-local ATTACK_ANIM_MAP  = {}   -- id -> M1 ability name
-local NON_M1_ANIM_IDS  = {}   -- id -> non-M1 ability name (hard block)
+local ATTACK_ANIM_MAP  = {}
+local NON_M1_ANIM_IDS  = {}
 
 local function collectAnimEntries(v, out)
     if type(v) == "string" then
@@ -216,16 +219,9 @@ local function buildAttackAnimMap()
                         local ids = {}
                         collectAnimEntries(animValue, ids)
                         if isM1Name(lname) then
-                            for _, id in ipairs(ids) do
-                                ATTACK_ANIM_MAP[id] = lname
-                            end
+                            for _, id in ipairs(ids) do ATTACK_ANIM_MAP[id] = lname end
                         else
-                            -- Non-M1 ability (Behead, GashingWound, etc.):
-                            -- record its IDs so nothing can misclassify them,
-                            -- even if .Animation.Name looks like "Hit".
-                            for _, id in ipairs(ids) do
-                                NON_M1_ANIM_IDS[id] = lname
-                            end
+                            for _, id in ipairs(ids) do NON_M1_ANIM_IDS[id] = lname end
                         end
                     end
                 end
@@ -233,8 +229,24 @@ local function buildAttackAnimMap()
         end
     end
 end
-task.spawn(buildAttackAnimMap)
+
+-- BUGFIX #6: call synchronously once before hooks are installed, then refresh async.
+buildAttackAnimMap()
 task.spawn(function() while true do task.wait(30); pcall(buildAttackAnimMap) end end)
+
+local function resolveM1Anim(track)
+    if not track or not track.Animation then return nil end
+    local anim = track.Animation
+    local id = tostring(anim.AnimationId):match("(%d+)")
+    if id and NON_M1_ANIM_IDS[id] then return nil end
+    if id then
+        local n = ATTACK_ANIM_MAP[id]
+        if n then return n end
+    end
+    local animName = anim.Name
+    if animName and isM1Name(animName) then return normalizeName(animName) end
+    return nil
+end
 
 local function getActiveM1(model)
     if not model or not model.Parent then return nil end
@@ -245,28 +257,16 @@ local function getActiveM1(model)
     local ok, tracks = pcall(function() return animator:GetPlayingAnimationTracks() end)
     if not ok or not tracks then return nil end
     for _, track in ipairs(tracks) do
-        if track.IsPlaying and track.Animation then
-            local id = tostring(track.Animation.AnimationId):match("(%d+")
-            -- Correct that: extract pure digits
-            id = tostring(track.Animation.AnimationId):match("(%d+)")
-            local isBlocked = id and NON_M1_ANIM_IDS[id]
-            if not isBlocked then
-                if id then
-                    local name = ATTACK_ANIM_MAP[id]
-                    if name then return name end
-                end
-                local animName = track.Animation.Name
-                if animName and isM1Name(animName) then
-                    return normalizeName(animName)
-                end
-            end
+        if track.IsPlaying then
+            local m1 = resolveM1Anim(track)
+            if m1 then return m1 end
         end
     end
     return nil
 end
 
 -- =========================================================
--- Block firing — cached, fast
+-- Block firing
 -- =========================================================
 local BlockButton = nil
 local function getBlockButton()
@@ -279,8 +279,9 @@ local function getBlockButton()
 end
 
 local lastBlockFire = 0
-local BLOCK_METHOD = nil          -- "signal" | "remote" | nil
+local BLOCK_METHOD = nil
 local SIGNAL_AVAILABLE = firesignalF ~= nil
+local BLOCK_Cfg = { Debug = false }
 
 local function fireBlock()
     local now = tick()
@@ -291,24 +292,25 @@ local function fireBlock()
         local btn = getBlockButton()
         if btn then
             pcall(firesignalF, btn.MouseButton1Click)
+            if BLOCK_Cfg.Debug then print("[AB] fired via signal") end
             return true
         end
         BLOCK_METHOD = nil
     end
-
     if BLOCK_METHOD == "remote" then
         if RemoteEvent then
             pcall(function() RemoteEvent:FireServer("UseActorAbility", {BLOCK_BUF}) end)
+            if BLOCK_Cfg.Debug then print("[AB] fired via remote") end
             return true
         end
         BLOCK_METHOD = nil
     end
-
     if SIGNAL_AVAILABLE then
         local btn = getBlockButton()
         if btn then
             if pcall(firesignalF, btn.MouseButton1Click) then
                 BLOCK_METHOD = "signal"
+                if BLOCK_Cfg.Debug then print("[AB] fired via signal (first)") end
                 return true
             end
         end
@@ -316,124 +318,186 @@ local function fireBlock()
     if RemoteEvent then
         if pcall(function() RemoteEvent:FireServer("UseActorAbility", {BLOCK_BUF}) end) then
             BLOCK_METHOD = "remote"
+            if BLOCK_Cfg.Debug then print("[AB] fired via remote (first)") end
             return true
         end
     end
+    if BLOCK_Cfg.Debug then print("[AB] no method succeeded") end
     return false
 end
 
 -- =========================================================
--- Box system
+-- BOX SYSTEM
 -- =========================================================
 local BoxCfg = {
-    Enabled = false, AppearMode = "M1",
+    Enabled = false,
+    AppearMode = "M1",
     Color = Color3.fromRGB(255, 60, 60),
     Width = 12, Height = 8, Length = 30,
-    Transparency = 0,
+    Transparency = 0.3,
     M1Boxes = 1, M1Spread = 3,
     M1FadeTime = 1,
+    Debug = false,
     Long = {},
 }
 
-local function ensureHitboxesFolder()
-    if HitboxesFolder and HitboxesFolder.Parent then return HitboxesFolder end
-    local h = Workspace:FindFirstChild("Hitboxes")
-    if not h then h = Instance.new("Folder"); h.Name = "Hitboxes"; h.Parent = Workspace end
-    HitboxesFolder = h
-    return h
+local BOX_FOLDER = nil
+local function ensureBoxFolder()
+    if BOX_FOLDER and BOX_FOLDER.Parent then return BOX_FOLDER end
+    local f = Workspace:FindFirstChild("SCPHub_Boxes")
+    if not f then
+        f = Instance.new("Folder")
+        f.Name = "SCPHub_Boxes"
+        f.Parent = Workspace
+    end
+    BOX_FOLDER = f
+    return f
 end
 
-local function spawnM1Boxes(killer)
+-- BUGFIX #9: per-killer cooldown so sound + anim don't double-spawn boxes
+local lastBoxSpawn = setmetatable({}, { __mode = "k" })
+local M1_BOX_COOLDOWN = 0.1
+
+-- =========================================================
+-- M1 transient boxes
+-- =========================================================
+local function spawnM1Boxes(killer, reason, attackType)
     if not killer or not killer.Parent then return end
-    local qh = killer:FindFirstChild("QueryHitbox"); if not qh then return end
-    local parent = ensureHitboxesFolder()
+    local qh = killer:FindFirstChild("QueryHitbox")
+    if not qh then
+        if BoxCfg.Debug then print("[Box] no QueryHitbox for", killer.Name) end
+        return
+    end
+
+    local now = tick()
+    if lastBoxSpawn[killer] and now - lastBoxSpawn[killer] < M1_BOX_COOLDOWN then
+        return
+    end
+    lastBoxSpawn[killer] = now
+
+    local folder = ensureBoxFolder()
     local count = math.max(1, math.floor(BoxCfg.M1Boxes))
-    local baseCF = qh.CFrame * M1_HITBOX_OFFSET
+    local custom = attackType and CUSTOM_HITBOXES[attackType]
+    local baseCF = qh.CFrame * (custom and custom.Offset or M1_HITBOX_OFFSET)
+    local visualSize = getM1HitboxSize(attackType)
     local fadeTime = math.max(0.3, BoxCfg.M1FadeTime)
+
     for i = 1, count do
         local p = Instance.new("Part")
         p.Name = "SCPHubM1Box"
         p.Anchored = true
-        p.CanCollide = false; p.CanTouch = false; p.CanQuery = false
-        p.CastShadow = false; p.Massless = true
-        p.Material = Enum.Material.ForceField
+        p.CanCollide = false
+        p.CanTouch = false
+        p.CanQuery = false
+        p.CastShadow = false
+        p.Massless = true
+        p.Material = Enum.Material.Neon
         p.Color = BoxCfg.Color
-        p.Transparency = 0.1
-        p.Size = M1_HITBOX_SIZE * 2.2
+        p.Transparency = 0.15
+        p.Size = visualSize
         p.CFrame = baseCF * CFrame.new((i - (count + 1) / 2) * BoxCfg.M1Spread, 0, 0)
-        p.Parent = parent
-        TweenService:Create(p, TweenInfo.new(fadeTime, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        p.Parent = folder
+        TweenService:Create(p,
+            TweenInfo.new(fadeTime, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
             { Transparency = 1 }):Play()
         Debris:AddItem(p, fadeTime + 0.1)
     end
+    if BoxCfg.Debug then
+        print(string.format("[Box] M1 box × %d | killer=%s | via %s", count, killer.Name, tostring(reason or "?")))
+    end
 end
 
+-- =========================================================
+-- Always-on long boxes
+-- =========================================================
 local function destroyLongBox(killer)
     local d = BoxCfg.Long[killer]; if not d then return end
     if d.part and d.part.Parent then pcall(function() d.part:Destroy() end) end
-    if d.hl and d.hl.Parent then pcall(function() d.hl:Destroy() end) end
+    if d.hl   and d.hl.Parent   then pcall(function() d.hl:Destroy()   end) end
     if d.conn then pcall(function() d.conn:Disconnect() end) end
     BoxCfg.Long[killer] = nil
 end
-local function applyLongBoxAppearance(data)
-    local part, hl = data.part, data.hl
-    if not part or not part.Parent then return end
-    local show = BoxCfg.Enabled and BoxCfg.AppearMode == "Always"
-    part.Color = BoxCfg.Color
-    part.Transparency = show and BoxCfg.Transparency or 1
-    part.Material = Enum.Material.Neon
-    if hl and hl.Parent then
-        hl.OutlineColor = BoxCfg.Color
-        hl.OutlineTransparency = show and 0 or 1
-        hl.FillTransparency = 1
-    end
+
+local function computeLongBoxCF(killer)
+    local hrp = killer:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+    local look = hrp.CFrame.LookVector
+    local flat = Vector3.new(look.X, 0, look.Z)
+    if flat.Magnitude < 1e-4 then return nil end
+    flat = flat.Unit
+    return CFrame.lookAt(
+        hrp.Position + flat * (BoxCfg.Length * 0.5),
+        hrp.Position + flat * (BoxCfg.Length * 0.5 + 1))
 end
-local function refreshAllLongBoxes()
-    local dead = {}
-    for killer, data in pairs(BoxCfg.Long) do
-        if not killer.Parent or not data.part or not data.part.Parent then
-            table.insert(dead, killer)
-        else
-            applyLongBoxAppearance(data)
-        end
-    end
-    for _, killer in ipairs(dead) do destroyLongBox(killer) end
-end
+
 local function createLongBox(killer)
     if not killer or not killer:IsA("Model") then return end
     destroyLongBox(killer)
+
+    local folder = ensureBoxFolder()
     local part = Instance.new("Part")
-    part.Name = "SCPHubLongBox"
-    part.Anchored = true; part.CanCollide = false; part.CanTouch = false; part.CanQuery = false
-    part.Massless = true; part.CastShadow = false
+    part.Name = "SCPHubLong_" .. killer.Name
+    part.Anchored = true
+    part.CanCollide = false
+    part.CanTouch = false
+    part.CanQuery = false
+    part.Massless = true
+    part.CastShadow = false
     part.Material = Enum.Material.Neon
+    part.Color = BoxCfg.Color
     part.Size = Vector3.new(BoxCfg.Width, BoxCfg.Height, BoxCfg.Length)
-    part.Parent = killer
+    part.Transparency = BoxCfg.Transparency
+    local initCF = computeLongBoxCF(killer)
+    if initCF then
+        part.CFrame = initCF
+    else
+        local pivot = killer:GetPivot()
+        part.CFrame = pivot
+    end
+    part.Parent = folder
+
     local hl = Instance.new("Highlight")
-    hl.Name = "SCPHubLongBoxHL"; hl.FillTransparency = 1
-    hl.OutlineColor = BoxCfg.Color; hl.OutlineTransparency = 1
+    hl.Name = "SCPHubLongBoxHL"
+    hl.Adornee = part
+    hl.FillColor = BoxCfg.Color
+    hl.OutlineColor = BoxCfg.Color
+    hl.FillTransparency = 1
+    hl.OutlineTransparency = 0
     hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    hl.Adornee = part; hl.Parent = part
+    hl.Parent = part
+
     local data = { part = part, hl = hl, conn = nil }
     BoxCfg.Long[killer] = data
-    applyLongBoxAppearance(data)
+
     data.conn = RunService.Heartbeat:Connect(function()
-        if not killer.Parent or not part.Parent then destroyLongBox(killer); return end
-        local hrp = killer:FindFirstChild("HumanoidRootPart"); if not hrp then return end
-        local look = hrp.CFrame.LookVector
-        local flat = Vector3.new(look.X, 0, look.Z)
-        if flat.Magnitude < 1e-4 then return end
-        flat = flat.Unit
+        if not killer.Parent or not part.Parent then
+            destroyLongBox(killer); return
+        end
+        local cf = computeLongBoxCF(killer)
+        if cf then part.CFrame = cf end
         part.Size = Vector3.new(BoxCfg.Width, BoxCfg.Height, BoxCfg.Length)
-        part.CFrame = CFrame.lookAt(
-            hrp.Position + flat * (BoxCfg.Length * 0.5),
-            hrp.Position + flat * (BoxCfg.Length * 0.5 + 1))
-        applyLongBoxAppearance(data)
+        part.Color = BoxCfg.Color
+        local show = BoxCfg.Enabled and BoxCfg.AppearMode == "Always"
+        part.Transparency = show and BoxCfg.Transparency or 1
+        if hl and hl.Parent then
+            hl.FillColor = BoxCfg.Color
+            hl.OutlineColor = BoxCfg.Color
+            hl.OutlineTransparency = show and 0 or 1
+        end
     end)
+
+    if BoxCfg.Debug then print("[Box] long box created for", killer.Name) end
 end
+
 local function ensureBoxes()
-    if not KillersFolder then return end
-    for _, k in ipairs(KillersFolder:GetChildren()) do
+    local pf = Workspace:FindFirstChild("Players")
+    local kf = pf and pf:FindFirstChild("Killers")
+    if not kf then return end
+    if BoxCfg.Debug then
+        print(string.format("[Box] ensureBoxes | killers=%d | mode=%s | enabled=%s",
+            #kf:GetChildren(), tostring(BoxCfg.AppearMode), tostring(BoxCfg.Enabled)))
+    end
+    for _, k in ipairs(kf:GetChildren()) do
         if k:IsA("Model") then
             if BoxCfg.Enabled and BoxCfg.AppearMode == "Always" and not BoxCfg.Long[k] then
                 createLongBox(k)
@@ -444,23 +508,31 @@ local function ensureBoxes()
     end
 end
 
+-- =========================================================
+-- M1 hooks — sound + anim both trigger boxes
+-- =========================================================
 local killerM1Conns = setmetatable({}, { __mode = "k" })
 local function hookKillerForM1(killer)
     if not killer or not killer:IsA("Model") then return end
     if killerM1Conns[killer] then return end
+
+    -- BUGFIX #3: track and clean up on killer destruction
+    local cleanup
+    cleanup = killer.Destroying:Connect(function()
+        local c = killerM1Conns[killer]
+        if c and c.Connected then pcall(function() c:Disconnect() end) end
+        killerM1Conns[killer] = nil
+        if cleanup then pcall(function() cleanup:Disconnect() end) end
+    end)
+
     local function tryHook()
         local hum = killer:FindFirstChildOfClass("Humanoid")
         local animator = hum and hum:FindFirstChildOfClass("Animator")
         if not animator then return false end
         killerM1Conns[killer] = animator.AnimationPlayed:Connect(function(track)
-            if not BoxCfg.Enabled then return end
-            if BoxCfg.AppearMode ~= "M1" then return end
-            local anim = track and track.Animation; if not anim then return end
-            local id = tostring(anim.AnimationId):match("(%d+)")
-            -- Non-M1 anim ID: hard refuse, even if the same asset is used elsewhere
-            if id and NON_M1_ANIM_IDS[id] then return end
-            if not id or not ATTACK_ANIM_MAP[id] then return end
-            spawnM1Boxes(killer)
+            if not BoxCfg.Enabled or BoxCfg.AppearMode ~= "M1" then return end
+            local m1 = resolveM1Anim(track)
+            if m1 then spawnM1Boxes(killer, "anim", m1) end
         end)
         return true
     end
@@ -485,6 +557,7 @@ local AB_Cfg = {
     SoundTrigger = true,
     AnimTrigger = true,
     MaxDistance = 25,
+    Debug = false,
 }
 
 local HB_PART = Instance.new("Part")
@@ -495,7 +568,7 @@ HB_PART.CanTouch = false
 HB_PART.CanQuery = false
 HB_PART.Massless = true
 HB_PART.Transparency = 1
-HB_PART.Size = M1_HITBOX_SIZE * 2.2
+HB_PART.Size = getM1HitboxSize(nil)
 HB_PART.Parent = Workspace
 
 local HB_PARAMS = OverlapParams.new()
@@ -508,16 +581,32 @@ RAY_LOS.IgnoreWater = true
 
 local function isInM1Hitbox(killer, attackType)
     local qh = killer:FindFirstChild("QueryHitbox")
-    if not qh then return false end
+    local myRoot = getMyRoot()
+    if not qh or not myRoot then return false end
+
+    local custom = attackType and CUSTOM_HITBOXES[attackType]
+    local size = getM1HitboxSize(attackType)
+    local offset = custom and custom.Offset or M1_HITBOX_OFFSET
+    local attackCF = qh.CFrame * offset
+
+    local rel = attackCF:PointToObjectSpace(myRoot.Position)
+    local half = size * 0.5
+    if math.abs(rel.X) <= half.X
+       and math.abs(rel.Y) <= half.Y
+       and math.abs(rel.Z) <= half.Z then
+        return true
+    end
+
     local myHb = getMyHb()
-    if not myHb then return false end
-
-    local custom = CUSTOM_HITBOXES[attackType]
-    HB_PART.Size = (custom and custom.Size or M1_HITBOX_SIZE) * 2.2
-    HB_PART.CFrame = qh.CFrame * (custom and custom.Offset or M1_HITBOX_OFFSET)
-
-    HB_PARAMS.FilterDescendantsInstances = { myHb }
-    return #Workspace:GetPartsInPart(HB_PART, HB_PARAMS) > 0
+    if myHb and myHb.CanQuery then
+        HB_PART.Size = size
+        HB_PART.CFrame = attackCF
+        HB_PARAMS.FilterDescendantsInstances = { myHb }
+        if #Workspace:GetPartsInPart(HB_PART, HB_PARAMS) > 0 then
+            return true
+        end
+    end
+    return false
 end
 
 local function tryBlockFromAttack(killer, attackType)
@@ -529,7 +618,6 @@ local function tryBlockFromAttack(killer, attackType)
     local mr = getMyRoot()
     local kh = killer:FindFirstChild("HumanoidRootPart")
     if not mr or not kh then return end
-
     if (kh.Position - mr.Position).Magnitude > AB_Cfg.MaxDistance then return end
     if not isInM1Hitbox(killer, attackType) then return end
 
@@ -537,7 +625,6 @@ local function tryBlockFromAttack(killer, attackType)
         RAY_LOS.FilterDescendantsInstances = { lp.Character, killer }
         if Workspace:Raycast(mr.Position, kh.Position - mr.Position, RAY_LOS) then return end
     end
-
     fireBlock()
 end
 
@@ -545,17 +632,23 @@ local killerAttackConns = setmetatable({}, { __mode = "k" })
 local function hookKillerForAttack(killer)
     if not killer or not killer:IsA("Model") then return end
     if killerAttackConns[killer] then return end
+
+    -- BUGFIX #3: track and clean up on killer destruction
+    local cleanup
+    cleanup = killer.Destroying:Connect(function()
+        local c = killerAttackConns[killer]
+        if c and c.Connected then pcall(function() c:Disconnect() end) end
+        killerAttackConns[killer] = nil
+        if cleanup then pcall(function() cleanup:Disconnect() end) end
+    end)
+
     local function tryHook()
         local hum = killer:FindFirstChildOfClass("Humanoid")
         local animator = hum and hum:FindFirstChildOfClass("Animator")
         if not animator then return false end
         killerAttackConns[killer] = animator.AnimationPlayed:Connect(function(track)
             if not AB_Cfg.Enabled or not AB_Cfg.AnimTrigger then return end
-            local anim = track and track.Animation; if not anim then return end
-            local id = tostring(anim.AnimationId):match("(%d+)")
-            -- Non-M1 anim ID: hard refuse
-            if id and NON_M1_ANIM_IDS[id] then return end
-            local attackType = id and ATTACK_ANIM_MAP[id]
+            local attackType = resolveM1Anim(track)
             if not attackType then return end
             task.spawn(tryBlockFromAttack, killer, attackType)
         end)
@@ -578,8 +671,6 @@ local IGNORE_BEHEAD = true
 local LOG_IDS = false
 _G.SCPHub_LastLoggedID = nil
 
--- Reject sounds whose Name looks like a non-M1 ability.
--- Catches "Behead-Hit", "Behead_Hit", "Gashing Wound", etc.
 local function soundNameIsBlocked(sound)
     local n = normalizeName(sound.Name)
     if n == "" then return false end
@@ -612,29 +703,34 @@ for _, id in ipairs({
     "98733709078792","99856718263455","74809026448465","99215225043220","79612713897495",
 }) do TRIGGER_SOUNDS[id] = true end
 
-local hookedSounds = {}
+local hookedSounds = setmetatable({}, { __mode = "k" })
 local lastSoundFire = setmetatable({}, { __mode = "k" })
 local function onSoundTrigger(sound)
     local now = tick()
     if lastSoundFire[sound] and now - lastSoundFire[sound] < 0.04 then return end
     lastSoundFire[sound] = now
-    if not AB_Cfg.Enabled or not AB_Cfg.SoundTrigger then return end
     local id = sound.SoundId and tostring(sound.SoundId):match("(%d+)")
     if not id or not TRIGGER_SOUNDS[id] then return end
-    -- Reject "Behead-Hit", "Behead_Hit", etc.
     if soundNameIsBlocked(sound) then return end
     if BEHEAD_IDS[id] and IGNORE_BEHEAD then return end
-    if not isSurvivor() or hasHelplessEffect() then return end
+
     local killer = sound:FindFirstAncestorOfClass("Model")
     if not killer then return end
-    local kf = KillersFolder or (Workspace:FindFirstChild("Players") and Workspace.Players:FindFirstChild("Killers"))
+    local pf = Workspace:FindFirstChild("Players")
+    local kf = pf and pf:FindFirstChild("Killers")
     if not kf or killer.Parent ~= kf then return end
-    -- getActiveM1 refuses anims in NON_M1_ANIM_IDS, so a sound played during
-    -- Behead cannot misclassify a Hit-named anim as an M1.
-    local attackType = getActiveM1(killer)
-    if not attackType then return end
+
     _G.SCPHub_LastLoggedID = id
     if LOG_IDS then print("[SCP Hub] Sound: " .. id .. " | Killer: " .. killer.Name) end
+
+    if BoxCfg.Enabled and BoxCfg.AppearMode == "M1" then
+        local atk = getActiveM1(killer)
+        spawnM1Boxes(killer, "sound:" .. id, atk)
+    end
+
+    if not AB_Cfg.Enabled or not AB_Cfg.SoundTrigger then return end
+    if not isSurvivor() or hasHelplessEffect() then return end
+    local attackType = getActiveM1(killer) or "SoundFallback"
     task.spawn(tryBlockFromAttack, killer, attackType)
 end
 local function hookSound(sound)
@@ -649,7 +745,7 @@ local function hookSound(sound)
 end
 
 task.spawn(function()
-    local lastK, lastS
+    local lastK
     while true do
         task.wait(0.5)
         local pf = Workspace:FindFirstChild("Players")
@@ -657,7 +753,7 @@ task.spawn(function()
             PlayersFolder = pf
             local kf = pf:FindFirstChild("Killers")
             local sf = pf:FindFirstChild("Survivors")
-            if sf and sf ~= lastS then SurvivorsFolder = sf; lastS = sf end
+            if sf then SurvivorsFolder = sf end
             if kf and kf ~= lastK then
                 KillersFolder = kf; lastK = kf
                 for _, d in ipairs(kf:GetDescendants()) do
@@ -683,12 +779,12 @@ task.spawn(function()
 end)
 
 -- =========================================================
--- ESP — Chams only
+-- ESP — Chams + Text
 -- =========================================================
 local ESP_CFG = {
-    Killers   = { Enabled=true, FillColor=Color3.fromRGB(255,40,40),
+    Killers   = { Enabled=true, TextEnabled=true, FillColor=Color3.fromRGB(255,40,40),
                   OutlineColor=Color3.new(1,1,1), FillTransparency=0.55, OutlineTransparency=0 },
-    Survivors = { Enabled=true, FillColor=Color3.fromRGB(40,255,90),
+    Survivors = { Enabled=true, TextEnabled=true, FillColor=Color3.fromRGB(40,255,90),
                   OutlineColor=Color3.new(1,1,1), FillTransparency=0.55, OutlineTransparency=0 },
 }
 local ESP_TRACK = setmetatable({}, { __mode = "k" })
@@ -699,16 +795,18 @@ local function espClear(m)
     ESP_TRACK[m] = nil
 end
 
-local function espEnsure(m, cfg)
+local function espEnsure(m, cfg, isKiller)
     if not m or not m.Parent then espClear(m); return end
     local t = ESP_TRACK[m]; if not t then t = {}; ESP_TRACK[m] = t end
     if t.Chams and not t.Chams.Parent then t.Chams = nil end
+
     if cfg.Enabled then
         if not t.Chams then
-            t.Chams = Instance.new("Highlight")
-            t.Chams.Adornee = m
-            t.Chams.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-            t.Chams.Parent = m
+            local h = Instance.new("Highlight")
+            h.Adornee = m
+            h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+            h.Parent = m
+            t.Chams = h
         end
         t.Chams.FillColor = cfg.FillColor
         t.Chams.OutlineColor = cfg.OutlineColor
@@ -717,23 +815,69 @@ local function espEnsure(m, cfg)
     elseif t.Chams then
         pcall(function() t.Chams:Destroy() end); t.Chams = nil
     end
+
+    if t.Billboard and not t.Billboard.Parent then t.Billboard = nil; t.Label = nil end
+    if cfg.TextEnabled then
+        if not t.Billboard then
+            local bb = Instance.new("BillboardGui")
+            bb.Name = "SCPHub_ESPText"
+            bb.Size = UDim2.new(0, 200, 0, 40)
+            bb.StudsOffset = Vector3.new(0, 3, 0)
+            bb.AlwaysOnTop = true
+            bb.Parent = m
+            local lbl = Instance.new("TextLabel")
+            lbl.Size = UDim2.new(1, 0, 1, 0)
+            lbl.BackgroundTransparency = 1
+            lbl.TextColor3 = cfg.FillColor
+            lbl.TextStrokeTransparency = 0
+            lbl.TextStrokeColor3 = Color3.new(0, 0, 0)
+            lbl.Font = Enum.Font.FredokaOne
+            lbl.TextScaled = true
+            lbl.Parent = bb
+            t.Billboard = bb
+            t.Label = lbl
+        end
+        local hrp = m:FindFirstChild("HumanoidRootPart")
+        local myHrp = getMyRoot()
+        local dist = 0
+        if hrp and myHrp then
+            dist = math.floor((hrp.Position - myHrp.Position).Magnitude)
+        end
+        t.Label.Text = string.format("%s %s [%d]", isKiller and "[K]" or "[S]", m.Name, dist)
+        t.Label.TextColor3 = cfg.FillColor
+    elseif t.Billboard then
+        pcall(function() t.Billboard:Destroy() end)
+        t.Billboard = nil; t.Label = nil
+    end
+end
+
+local function espCollectFromFolder(folder)
+    local out = {}
+    if not folder then return out end
+    for _, m in ipairs(folder:GetChildren()) do
+        if m:IsA("Model") and m:FindFirstChildOfClass("Humanoid") then
+            out[#out+1] = m
+        end
+    end
+    return out
 end
 
 task.spawn(function()
     while true do
-        task.wait(0.3)
+        task.wait(0.2)
         pcall(function()
+            local pf = Workspace:FindFirstChild("Players")
+            local kf = pf and pf:FindFirstChild("Killers")
+            local sf = pf and pf:FindFirstChild("Survivors")
             if ESP_CFG.Killers.Enabled then
-                local kf = KillersFolder or (Workspace:FindFirstChild("Players") and Workspace.Players:FindFirstChild("Killers"))
-                if kf then for _, m in ipairs(kf:GetChildren()) do
-                    if m:IsA("Model") and m ~= lp.Character then espEnsure(m, ESP_CFG.Killers) end
-                end end
+                for _, m in ipairs(espCollectFromFolder(kf)) do
+                    if not isLocalPlayerChar(m) then espEnsure(m, ESP_CFG.Killers, true) end
+                end
             end
             if ESP_CFG.Survivors.Enabled then
-                local sf = SurvivorsFolder or (Workspace:FindFirstChild("Players") and Workspace.Players:FindFirstChild("Survivors"))
-                if sf then for _, m in ipairs(sf:GetChildren()) do
-                    if m:IsA("Model") and m ~= lp.Character then espEnsure(m, ESP_CFG.Survivors) end
-                end end
+                for _, m in ipairs(espCollectFromFolder(sf)) do
+                    if not isLocalPlayerChar(m) then espEnsure(m, ESP_CFG.Survivors, false) end
+                end
             end
             for m in pairs(ESP_TRACK) do
                 if not m.Parent then espClear(m) end
@@ -804,11 +948,21 @@ task.spawn(function()
         StaminaGain=Sprinting.StaminaGain, SprintSpeed=Sprinting.SprintSpeed,
         StaminaLossDisabled=Sprinting.StaminaLossDisabled,
     }
+    -- BUGFIX #10: re-apply user's pre-load selection
+    if STAM.Mode ~= "Regular" then
+        pcall(stamSetMode, STAM.Mode)
+    end
 end)
 local function stamSetMode(mode)
     STAM.Mode = mode
     if not Sprinting then return end
-    if STAM._thread then task.cancel(STAM._thread); STAM._thread = nil end
+    -- BUGFIX #13: safe-cancel of possibly-finished thread
+    if STAM._thread then
+        if coroutine.status(STAM._thread) ~= "dead" then
+            pcall(task.cancel, STAM._thread)
+        end
+        STAM._thread = nil
+    end
     if mode == "Regular" and STAM.orig then
         pcall(function()
             for k, v in pairs(STAM.orig) do if v ~= nil then Sprinting[k] = v end end
@@ -846,11 +1000,12 @@ local HDT = {
 }
 local function nearestKillerPart()
     local mr = getMyRoot()
-    local kf = KillersFolder or (Workspace:FindFirstChild("Players") and Workspace.Players:FindFirstChild("Killers"))
+    local pf = Workspace:FindFirstChild("Players")
+    local kf = pf and pf:FindFirstChild("Killers")
     if not mr or not kf then return nil end
     local best, bd = nil, math.huge
     for _, k in ipairs(kf:GetChildren()) do
-        if k:IsA("Model") and k ~= lp.Character then
+        if k:IsA("Model") then
             local hrp = k:FindFirstChild("HumanoidRootPart")
             local h = k:FindFirstChildOfClass("Humanoid")
             if hrp and h and h.Health > 0 then
@@ -954,11 +1109,12 @@ local function isPlayingSurvivor()
 end
 local function updateCachedTarget()
     local mr = getMyRoot()
-    local kf = KillersFolder or (Workspace:FindFirstChild("Players") and Workspace.Players:FindFirstChild("Killers"))
+    local pf = Workspace:FindFirstChild("Players")
+    local kf = pf and pf:FindFirstChild("Killers")
     if not mr or not kf then AIM.CachedTargetHRP = nil return end
     local best, bestD = nil, 500
     for _, s in ipairs(kf:GetChildren()) do
-        if s:IsA("Model") and s ~= lp.Character then
+        if s:IsA("Model") then
             local hrp = s:FindFirstChild("HumanoidRootPart")
             local hum = s:FindFirstChildOfClass("Humanoid")
             if hrp and hum and hum.Health > 0 then
@@ -1107,8 +1263,7 @@ local function bindAnimWatch()
         local now = tick()
         if now - (AbilityHook._lastFire or 0) < (AbilityHook.Cooldown or 1) then return end
         AbilityHook._lastFire = now
-        local dur = (info.Lock or 1) * (AIM.LockTime or 1)
-        AimFor(dur, info.Ability)
+        AimFor((info.Lock or 1) * (AIM.LockTime or 1), info.Ability)
     end)
 end
 lp.CharacterAdded:Connect(function() task.wait(0.4); loadCharacterAnims(); bindAnimWatch() end)
@@ -1128,6 +1283,8 @@ task.spawn(function()
 end)
 
 local autoRotRestored = true
+-- BUGFIX #1: unbind so re-execution doesn't error
+pcall(RunService.UnbindFromRenderStep, RunService, "SCPHubAim")
 RunService:BindToRenderStep("SCPHubAim", Enum.RenderPriority.Camera.Value + 1, function(dt)
     local aimActive = AIM.Enabled or (tick() < (AIM._aimUntil or 0))
     if not isPlayingSurvivor() or not aimActive or not AIM.CachedTargetHRP or not AIM.CachedTargetHRP.Parent then
@@ -1178,7 +1335,9 @@ local ChanceAimbot = {
     Enabled=false, LockTime=1, PredMin=2, PredMax=3,
     TurnLeadMult=1,
     _isLocking=false, _lockUntil=0, _currentTarget=nil,
-    _lastTrigger=0, _hooked={}, _velHistory={},
+    _lastTrigger=0, _hooked=setmetatable({}, { __mode = "k" }),
+    _conns = setmetatable({}, { __mode = "k" }),
+    _velHistory={},
 }
 local CHANCE_KILLER_NAMES = {
     ["jason"]=true, ["c00lkidd"]=true, ["johndoe"]=true, ["1x1x1x1"]=true,
@@ -1248,8 +1407,7 @@ local function chanceDoAimlock(root)
     local aimAt = chancePredictPosition(root); if not aimAt then return end
     local myPos = me.Position
     me.AssemblyAngularVelocity = Vector3.zero
-    local cf = CFrame.new(myPos, Vector3.new(aimAt.X, myPos.Y, aimAt.Z))
-    me.CFrame = cf
+    me.CFrame = CFrame.new(myPos, Vector3.new(aimAt.X, myPos.Y, aimAt.Z))
 end
 local function chanceStartAimlock()
     if os.clock() - ChanceAimbot._lastTrigger < 0.12 then return end
@@ -1258,8 +1416,9 @@ local function chanceStartAimlock()
     ChanceAimbot._isLocking = true
     ChanceAimbot._lockUntil = os.clock() + ChanceAimbot.LockTime
     ChanceAimbot._currentTarget = root
+    -- BUGFIX #5: don't prime velocity history with 6 identical samples
     ChanceAimbot._velHistory = {}
-    for _ = 1, 6 do chanceDoAimlock(root) end
+    chanceDoAimlock(root)
 end
 local function chanceHookButton(btn)
     if not btn or ChanceAimbot._hooked[btn] then return end
@@ -1270,12 +1429,19 @@ local function chanceHookButton(btn)
          or name:find("gun", 1, true)
          or name:find("oneshot", 1, true)) then return end
     ChanceAimbot._hooked[btn] = true
-    btn.MouseButton1Click:Connect(function()
+    local conn = btn.MouseButton1Click:Connect(function()
         if ChanceAimbot.Enabled then chanceStartAimlock() end
     end)
+    ChanceAimbot._conns[conn] = true
 end
 local function chanceScanButtons()
     if not PlayerGui then return end
+    -- BUGFIX #4: rebuild connection list, drop dead connections
+    for conn in pairs(ChanceAimbot._conns) do
+        if not conn.Connected then
+            ChanceAimbot._conns[conn] = nil
+        end
+    end
     for _, b in ipairs(PlayerGui:GetDescendants()) do
         pcall(chanceHookButton, b)
     end
@@ -1306,16 +1472,38 @@ end)
 local Misc_HideInjury = false
 local Misc_DisableBlindness = false
 
+-- BUGFIX #2 / #14: only act when toggle is ON. Never force-show / force-enable.
+local injuryWasHidden = setmetatable({}, { __mode = "k" })
+local blindnessWasHidden = setmetatable({}, { __mode = "k" })
+
 local function applyInjuryTo(inst)
     if inst.Name == "redFlash" or inst.Name == "injuredVignette" then
-        pcall(function() inst.Visible = not Misc_HideInjury end)
+        if Misc_HideInjury then
+            pcall(function() inst.Visible = false end)
+            injuryWasHidden[inst] = true
+        elseif injuryWasHidden[inst] then
+            pcall(function() inst.Visible = true end)
+            injuryWasHidden[inst] = nil
+        end
+    elseif inst.Name == "HealthDesaturation" then
+        if Misc_HideInjury then
+            pcall(function() inst.Enabled = false end)
+            injuryWasHidden[inst] = true
+        elseif injuryWasHidden[inst] then
+            pcall(function() inst.Enabled = true end)
+            injuryWasHidden[inst] = nil
+        end
     end
 end
 local function applyBlindnessTo(inst)
     if inst.Name == "BlindnessBlur" and inst:IsA("BlurEffect") then
-        pcall(function() inst.Enabled = not Misc_DisableBlindness end)
-    elseif inst.Name == "HealthDesaturation" then
-        pcall(function() inst.Enabled = not Misc_HideInjury end)
+        if Misc_DisableBlindness then
+            pcall(function() inst.Enabled = false end)
+            blindnessWasHidden[inst] = true
+        elseif blindnessWasHidden[inst] then
+            pcall(function() inst.Enabled = true end)
+            blindnessWasHidden[inst] = nil
+        end
     end
 end
 
@@ -1328,78 +1516,142 @@ local function reapplyMisc()
 end
 
 -- =========================================================
--- RAYFIELD GEN 2 UI
+-- UI
 -- =========================================================
 local Window = Rayfield:CreateWindow({
     name = "SCP Hub",
-    subtitle = "v1.81",
+    subtitle = "v1.84",
     sidebarLayout = true,
-    configuration = { autoSave = true, autoLoad = true, fileName = "SCPHub" },
+    configuration = { autoSave = true, autoLoad = true, fileName = "SCPHub_v184" },
 })
 
+task.defer(function()
+    ESP_CFG.Killers.Enabled = true
+    ESP_CFG.Survivors.Enabled = true
+end)
+
+-- =========================================================
+-- ESP Tab
+-- =========================================================
 local ESPTab = Window:CreateTab({ name = "ESP", icon = 93364949241311 })
 ESPTab:CreateSection("Killer Chams")
 ESPTab:CreateToggle({ name = "Enabled", default = true, callback = function(v) ESP_CFG.Killers.Enabled = v end })
+ESPTab:CreateToggle({ name = "Name + Distance", default = true, callback = function(v) ESP_CFG.Killers.TextEnabled = v end })
 ESPTab:CreateColorPicker({ name = "Fill Color", color = Color3.fromRGB(255, 40, 40), callback = function(c) ESP_CFG.Killers.FillColor = c end })
-ESPTab:CreateSlider({ name = "Fill Transparency", min = 0, max = 1, default = 1, increment = 1, callback = function(v) ESP_CFG.Killers.FillTransparency = v end })
+ESPTab:CreateSlider({ name = "Fill Transparency", min = 0, max = 1, default = 0.55, increment = 0.05, callback = function(v) ESP_CFG.Killers.FillTransparency = v end })
 ESPTab:CreateSection("Survivor Chams")
 ESPTab:CreateToggle({ name = "Enabled", default = true, callback = function(v) ESP_CFG.Survivors.Enabled = v end })
+ESPTab:CreateToggle({ name = "Name + Distance", default = true, callback = function(v) ESP_CFG.Survivors.TextEnabled = v end })
 ESPTab:CreateColorPicker({ name = "Fill Color", color = Color3.fromRGB(40, 255, 90), callback = function(c) ESP_CFG.Survivors.FillColor = c end })
-ESPTab:CreateSlider({ name = "Fill Transparency", min = 0, max = 1, default = 1, increment = 1, callback = function(v) ESP_CFG.Survivors.FillTransparency = v end })
+ESPTab:CreateSlider({ name = "Fill Transparency", min = 0, max = 1, default = 0.55, increment = 0.05, callback = function(v) ESP_CFG.Survivors.FillTransparency = v end })
 
+-- =========================================================
+-- Auto Block Tab
+-- =========================================================
 local ABTab = Window:CreateTab({ name = "Auto Block", icon = 93364949241311 })
 ABTab:CreateSection("Auto Block")
 ABTab:CreateToggle({ name = "Enable Auto Block", default = false, callback = function(v) AB_Cfg.Enabled = v end })
-ABTab:CreateToggle({ name = "Animation Trigger (primary)", default = true, callback = function(v) AB_Cfg.AnimTrigger = v end })
-ABTab:CreateToggle({ name = "Sound Trigger (verifies anim)", default = true, callback = function(v) AB_Cfg.SoundTrigger = v end })
-ABTab:CreateToggle({ name = "Wall Check (slower, more accurate)", default = false, callback = function(v) AB_Cfg.WallCheck = v end })
+ABTab:CreateToggle({ name = "Animation Trigger", default = true, callback = function(v) AB_Cfg.AnimTrigger = v end })
+ABTab:CreateToggle({ name = "Sound Trigger", default = true, callback = function(v) AB_Cfg.SoundTrigger = v end })
+ABTab:CreateToggle({ name = "Wall Check (slower)", default = false, callback = function(v) AB_Cfg.WallCheck = v end })
+ABTab:CreateToggle({ name = "Debug Logging", default = false, callback = function(v)
+    AB_Cfg.Debug = v; BLOCK_Cfg.Debug = v; BoxCfg.Debug = v
+end })
 ABTab:CreateSlider({ name = "Max Distance", min = 5, max = 60, default = 25, increment = 1, callback = function(v) AB_Cfg.MaxDistance = v end })
-ABTab:CreateButton({ name = "Block Now", callback = function() task.spawn(fireBlock) end })
+ABTab:CreateButton({ name = "Block Now", callback = function() print("[AB] manual block:", fireBlock()) end })
+ABTab:CreateButton({ name = "Test Hitbox (nearest killer)", callback = function()
+    local pf = Workspace:FindFirstChild("Players")
+    local kf = pf and pf:FindFirstChild("Killers")
+    if not kf then print("[AB] no killers folder") return end
+    for _, k in ipairs(kf:GetChildren()) do
+        if k:IsA("Model") and k:FindFirstChild("QueryHitbox") then
+            print(string.format("[AB] %s in hitbox=%s", k.Name, tostring(isInM1Hitbox(k, "Test"))))
+        end
+    end
+end })
 ABTab:CreateSection("Behead")
 ABTab:CreateToggle({ name = "Ignore Behead Sounds", default = true, callback = function(v) IGNORE_BEHEAD = v end })
 ABTab:CreateToggle({ name = "Log Sound IDs", default = false, callback = function(v) LOG_IDS = v end })
 ABTab:CreateButton({ name = "Mark Last as Behead", callback = function()
-    if _G.SCPHub_LastLoggedID then
-        BEHEAD_IDS[_G.SCPHub_LastLoggedID] = true
-    end
+    if _G.SCPHub_LastLoggedID then BEHEAD_IDS[_G.SCPHub_LastLoggedID] = true end
 end })
 
+-- =========================================================
+-- Box Tab
+-- =========================================================
 local BoxTab = Window:CreateTab({ name = "Box", icon = 93364949241311 })
 BoxTab:CreateSection("Box Settings")
 BoxTab:CreateToggle({ name = "Show Box", default = false, callback = function(v)
     BoxCfg.Enabled = v
-    if not v then for k in pairs(BoxCfg.Long) do destroyLongBox(k) end
-    else task.spawn(ensureBoxes) end
+    if not v then
+        for k in pairs(BoxCfg.Long) do destroyLongBox(k) end
+    else
+        task.spawn(ensureBoxes)
+    end
 end })
 BoxTab:CreateDropdown({ name = "Appear Mode", options = { "M1", "Always" }, default = "M1", callback = function(v)
     BoxCfg.AppearMode = v
-    if v == "Always" then task.spawn(ensureBoxes)
-    else for k in pairs(BoxCfg.Long) do destroyLongBox(k) end end
+    if v == "Always" then
+        task.spawn(ensureBoxes)
+    else
+        for k in pairs(BoxCfg.Long) do destroyLongBox(k) end
+    end
 end })
 BoxTab:CreateColorPicker({ name = "Box Color", color = Color3.fromRGB(255, 60, 60), callback = function(c)
     BoxCfg.Color = c
-    refreshAllLongBoxes()
+end })
+BoxTab:CreateSlider({ name = "Transparency", min = 0, max = 1, default = 0.3, increment = 0.05, callback = function(v) BoxCfg.Transparency = v end })
+BoxTab:CreateToggle({ name = "Debug Logging", default = false, callback = function(v) BoxCfg.Debug = v end })
+BoxTab:CreateButton({ name = "Test Box (nearest killer)", callback = function()
+    local pf = Workspace:FindFirstChild("Players")
+    local kf = pf and pf:FindFirstChild("Killers")
+    if not kf then print("[Box] no killers folder") return end
+    local myRoot = getMyRoot()
+    local best, bd = nil, math.huge
+    for _, k in ipairs(kf:GetChildren()) do
+        if k:IsA("Model") then
+            local hrp = k:FindFirstChild("HumanoidRootPart")
+            if hrp and myRoot then
+                local d = (hrp.Position - myRoot.Position).Magnitude
+                if d < bd then bd = d; best = k end
+            end
+        end
+    end
+    if best then
+        spawnM1Boxes(best, "test-button", nil)
+        print(string.format("[Box] test spawned for %s (%.1f studs away)", best.Name, bd))
+    else
+        print("[Box] no killer found")
+    end
 end })
 BoxTab:CreateSection("M1 Boxes (transient)")
 BoxTab:CreateSlider({ name = "Boxes per M1", min = 1, max = 10, default = 1, increment = 1, callback = function(v) BoxCfg.M1Boxes = v end })
 BoxTab:CreateSlider({ name = "Spread", min = 0, max = 20, default = 3, increment = 1, callback = function(v) BoxCfg.M1Spread = v end })
 BoxTab:CreateSlider({ name = "Fade Time (0.1s steps)", min = 1, max = 30, default = 10, increment = 1, callback = function(v) BoxCfg.M1FadeTime = v / 10 end })
-BoxTab:CreateSection("Always Box (detection visual)")
+BoxTab:CreateSection("Always Box")
 BoxTab:CreateSlider({ name = "Width", min = 1, max = 60, default = 12, increment = 1, callback = function(v) BoxCfg.Width = v end })
 BoxTab:CreateSlider({ name = "Length", min = 1, max = 120, default = 30, increment = 1, callback = function(v) BoxCfg.Length = v end })
 BoxTab:CreateSlider({ name = "Height", min = 1, max = 30, default = 8, increment = 1, callback = function(v) BoxCfg.Height = v end })
-BoxTab:CreateSlider({ name = "Transparency", min = 0, max = 1, default = 0, increment = 1, callback = function(v) BoxCfg.Transparency = v end })
 
+-- =========================================================
+-- Gen Tab
+-- =========================================================
 local GenTab = Window:CreateTab({ name = "Gen", icon = 93364949241311 })
 GenTab:CreateSection("Auto Generator")
 GenTab:CreateToggle({ name = "Enable Auto Gen", default = false, callback = function(v) AUTOGEN.Enabled = v; autogenLoop() end })
 GenTab:CreateSlider({ name = "Range", min = 5, max = 30, default = 10, increment = 1, callback = function(v) AUTOGEN.MaxDistance = v end })
 GenTab:CreateSlider({ name = "Interval", min = 1, max = 5, default = 1, increment = 1, callback = function(v) AUTOGEN.Interval = v end })
 
+-- =========================================================
+-- Stamina Tab
+-- =========================================================
 local StamTab = Window:CreateTab({ name = "Stamina", icon = 93364949241311 })
 StamTab:CreateSection("Sprint")
 StamTab:CreateDropdown({ name = "Preset", options = { "Regular", "Semi", "Infinite" }, default = "Regular", callback = function(v) stamSetMode(v) end })
 
+-- =========================================================
+-- HDT Tab
+-- =========================================================
 local HDT_Tab = Window:CreateTab({ name = "HDT", icon = 93364949241311 })
 HDT_Tab:CreateSection("HDT")
 HDT_Tab:CreateToggle({ name = "Enabled", default = false, callback = function(v) HDT.Enabled = v end })
@@ -1411,6 +1663,9 @@ HDT_Tab:CreateSlider({ name = "Cooldown", min = 1, max = 60, default = 27, incre
 HDT_Tab:CreateSlider({ name = "Max Range", min = 10, max = 120, default = 40, increment = 1, callback = function(v) HDT.MaxRange = v end })
 HDT_Tab:CreateButton({ name = "Trigger Now (Q)", callback = function() task.spawn(function() pcall(function() HDT_Trigger(true) end) end) end })
 
+-- =========================================================
+-- Aim Tab
+-- =========================================================
 local AimTab = Window:CreateTab({ name = "Aim", icon = 93364949241311 })
 AimTab:CreateSection("Survivor Stun Aim")
 AimTab:CreateToggle({ name = "Enabled", default = false, callback = function(v) AIM.Enabled = v end })
@@ -1425,26 +1680,36 @@ AimTab:CreateSlider({ name = "Prediction Strength (x10)", min = 5, max = 30, def
 AimTab:CreateSection("Chance Aimlock")
 AimTab:CreateToggle({ name = "Enable", default = false, callback = function(v)
     ChanceAimbot.Enabled = v
-    if v then chanceScanButtons() else ChanceAimbot._isLocking = false; ChanceAimbot._hooked = {} end
+    if v then
+        chanceScanButtons()
+    else
+        ChanceAimbot._isLocking = false
+        -- BUGFIX #4: fully disconnect on disable
+        for conn in pairs(ChanceAimbot._conns) do
+            pcall(function() conn:Disconnect() end)
+        end
+        ChanceAimbot._conns = setmetatable({}, { __mode = "k" })
+        ChanceAimbot._hooked = setmetatable({}, { __mode = "k" })
+    end
 end })
 AimTab:CreateSlider({ name = "Lock Time (0.1s)", min = 3, max = 30, default = 10, increment = 1, callback = function(v) ChanceAimbot.LockTime = v / 10 end })
 AimTab:CreateSlider({ name = "Prediction Min (x10)", min = 0, max = 100, default = 20, increment = 1, callback = function(v) ChanceAimbot.PredMin = v / 10 end })
 AimTab:CreateSlider({ name = "Prediction Max (x10)", min = 0, max = 150, default = 30, increment = 1, callback = function(v) ChanceAimbot.PredMax = v / 10 end })
 AimTab:CreateSlider({ name = "Turn Lead (x10)", min = 0, max = 30, default = 10, increment = 1, callback = function(v) ChanceAimbot.TurnLeadMult = v / 10 end })
+-- BUGFIX #11: handle both string and Enum.KeyCode
 AimTab:CreateKeybind({ name = "Aimlock Key", default = "V", callback = function(k)
-    if ChanceAimbot.Enabled and k == "V" then chanceStartAimlock() end
+    if not ChanceAimbot.Enabled then return end
+    local pressedV = (k == Enum.KeyCode.V) or (tostring(k) == "V") or (tostring(k) == "Enum.KeyCode.V")
+    if pressedV then chanceStartAimlock() end
 end })
 
+-- =========================================================
+-- Misc Tab
+-- =========================================================
 local MiscTab = Window:CreateTab({ name = "Misc", icon = 93364949241311 })
 MiscTab:CreateSection("Visuals")
-MiscTab:CreateToggle({ name = "Hide Injury", default = false, callback = function(v)
-    Misc_HideInjury = v
-    reapplyMisc()
-end })
-MiscTab:CreateToggle({ name = "Disable Blindness", default = false, callback = function(v)
-    Misc_DisableBlindness = v
-    reapplyMisc()
-end })
+MiscTab:CreateToggle({ name = "Hide Injury", default = false, callback = function(v) Misc_HideInjury = v; reapplyMisc() end })
+MiscTab:CreateToggle({ name = "Disable Blindness", default = false, callback = function(v) Misc_DisableBlindness = v; reapplyMisc() end })
 MiscTab:CreateSection("Utility")
 MiscTab:CreateButton({ name = "Fullbright", callback = function()
     pcall(function()
@@ -1467,7 +1732,6 @@ MiscTab:CreateButton({ name = "Reset Character", callback = function()
     if h then h.Health = 0 end
 end })
 
-if _G.SCPHubInput then pcall(function() _G.SCPHubInput:Disconnect() end) end
 _G.SCPHubInput = UIS.InputBegan:Connect(function(input, gpe)
     if gpe then return end
     if input.KeyCode == Enum.KeyCode.Q then
@@ -1475,4 +1739,4 @@ _G.SCPHubInput = UIS.InputBegan:Connect(function(input, gpe)
     end
 end)
 
-Window:Notify({ title = "SCP Hub", content = "Loaded · v1.81", duration = 3 })
+Window:Notify({ title = "SCP Hub", content = "Loaded · v1.84 (bugfixes applied)", duration = 3 })

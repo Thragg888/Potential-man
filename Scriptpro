@@ -1,7 +1,7 @@
 repeat task.wait() until game:IsLoaded()
 
 -- ==========================================
--- SLASHSAKEN SPLASH (small, ~340x230, 3s total)
+-- SLASHSAKEN SPLASH (340x230, 3s total)
 -- ==========================================
 local function showSplash()
     local TweenService = game:GetService("TweenService")
@@ -69,9 +69,9 @@ local function showSplash()
     img2.Parent        = card
 
     local title = Instance.new("TextLabel")
-    title.AnchorPoint = Vector2.new(0.5, 0)
-    title.Position    = UDim2.new(0.5, 0, 0.75, 0)
-    title.Size        = UDim2.new(1, -20, 0, 24)
+    title.AnchorPoint = Vector2.new(0.5, 0.5)
+    title.Position    = UDim2.new(0.5, 0, 0.82, 0)
+    title.Size        = UDim2.new(1, -20, 0, 26)
     title.BackgroundTransparency = 1
     title.Font        = Enum.Font.GothamBold
     title.TextSize    = 18
@@ -79,18 +79,6 @@ local function showSplash()
     title.TextTransparency = 1
     title.Text        = "Loading Slashsaken..."
     title.Parent      = card
-
-    local sub = Instance.new("TextLabel")
-    sub.AnchorPoint = Vector2.new(0.5, 0)
-    sub.Position    = UDim2.new(0.5, 0, 0.88, 0)
-    sub.Size        = UDim2.new(1, -20, 0, 16)
-    sub.BackgroundTransparency = 1
-    sub.Font        = Enum.Font.Gotham
-    sub.TextSize    = 12
-    sub.TextColor3  = Color3.fromRGB(180, 180, 190)
-    sub.TextTransparency = 1
-    sub.Text        = "by doobtwo"
-    sub.Parent      = card
 
     pcall(function()
         game:GetService("ContentProvider"):PreloadAsync({
@@ -108,7 +96,6 @@ local function showSplash()
     TweenService:Create(img1,   IN, { ImageTransparency = 0 }):Play()
     TweenService:Create(img2,   IN, { ImageTransparency = 0 }):Play()
     TweenService:Create(title,  IN, { TextTransparency = 0 }):Play()
-    TweenService:Create(sub,    IN, { TextTransparency = 0 }):Play()
 
     task.delay(2.4, function()
         pcall(function()
@@ -122,7 +109,6 @@ local function showSplash()
         TweenService:Create(img1,   OUT, { ImageTransparency = 1 }):Play()
         TweenService:Create(img2,   OUT, { ImageTransparency = 1 }):Play()
         TweenService:Create(title,  OUT, { TextTransparency = 1 }):Play()
-        TweenService:Create(sub,    OUT, { TextTransparency = 1 }):Play()
         task.delay(0.5, function()
             pcall(function() gui:Destroy() end)
         end)
@@ -178,7 +164,7 @@ local predictionTurnStrength = 1
 local blockPartsSizeMultiplier = 1
 local hitboxDraggingTech     = false
 local _hitboxDraggingDebounce = false
-local Dspeed                 = 5.6
+local Dspeed                 = 8      -- smoother default (no more 3x multiplier)
 local Ddelay                 = 0
 local MyAnimLockOn           = false
 local AIM_WINDOW             = 0.8
@@ -196,7 +182,6 @@ local MESSAGE_BLOCK_COOLDOWN = 0.6
 local _punchPrevPlaying      = {}
 local _blockPrevPlaying      = {}
 
--- Flick protection
 local flickProtectionEnabled  = false
 local flickRange              = 15
 local flickDegPerSecThreshold = 500
@@ -283,7 +268,7 @@ local function isKillerFlicking(killer, myRoot, killerHRP)
 end
 
 -- ==========================================
--- HDT DRAG
+-- HDT DRAG (SMOOTH — NO TELEPORT)
 -- ==========================================
 local function beginDragIntoKiller(killerModel)
     if _hitboxDraggingDebounce then return end
@@ -299,16 +284,17 @@ local function beginDragIntoKiller(killerModel)
 
     _hitboxDraggingDebounce = true
 
+    -- Use ONLY BodyVelocity for smooth movement (no CFrame teleporting)
     local bv = Instance.new("BodyVelocity")
-    bv.Name = "HDT_BV"
-    bv.MaxForce = Vector3.new(math.huge, 0, math.huge)
+    bv.Name     = "HDT_BV"
+    bv.MaxForce = Vector3.new(8e4, 0, 8e4)  -- firm but not infinite → smooth accel
     bv.Velocity = Vector3.new(0, 0, 0)
     bv.Parent   = hrp
 
-    local speed = (Dspeed or 5.6) * 3
+    local speed = Dspeed or 8
 
     local conn
-    conn = RunService.Heartbeat:Connect(function(dt)
+    conn = RunService.Heartbeat:Connect(function()
         if not _hitboxDraggingDebounce then
             conn:Disconnect()
             if bv and bv.Parent then pcall(function() bv:Destroy() end) end
@@ -325,12 +311,12 @@ local function beginDragIntoKiller(killerModel)
         local dist = horiz.Magnitude
         if dist <= 2.0 then _hitboxDraggingDebounce = false; return end
         local dir = horiz.Unit
-        bv.Velocity = Vector3.new(dir.X * speed, 0, dir.Z * speed)
-        local step = math.min(speed * dt, dist - 2.0)
-        pcall(function() hrp.CFrame = hrp.CFrame + dir * step end)
+        -- Pure velocity (smooth, no CFrame jumps)
+        bv.Velocity = Vector3.new(dir.X * speed, bv.Velocity.Y, dir.Z * speed)
     end)
 
-    task.delay(1.5, function()
+    -- 3s timeout so lower speeds have enough time to actually reach
+    task.delay(3, function()
         if _hitboxDraggingDebounce then _hitboxDraggingDebounce = false end
     end)
 end
@@ -691,49 +677,71 @@ local function setStamina()
 end
 
 -- ==========================================
--- CREATE WINDOW + TABS (AutoShow false — splash covers the load)
+-- CREATE WINDOW (Title [Beta], Footer "By viltrumite")
 -- ==========================================
 local Window = Library:CreateWindow({
-    Title            = "Slashsaken",
-    Footer           = "by doobtwo | Obsidian",
+    Title            = "Slashsaken [Beta]",
+    Footer           = "By viltrumite",
     NotifySide       = "Right",
     ShowCustomCursor = true,
     AutoShow         = false,
 })
+
+-- ==========================================
+-- TABS IN REQUESTED ORDER
+-- Esp → Stam → Auto Block → Facing Check → rest
+-- ==========================================
 local Tabs = {
-    Notice    = Window:AddTab("Notice", "info"),
-    Stamina   = Window:AddTab("Stamina", "zap"),
-    AutoBlock = Window:AddTab("Auto Block", "shield"),
-    AutoPunch = Window:AddTab("Auto Punch", "sword"),
-    AntiB     = Window:AddTab("Anti Bait", "crosshair"),
-    BD        = Window:AddTab("Better Detection", "eye"),
-    Tech      = Window:AddTab("Techs", "cpu"),
-    Killer    = Window:AddTab("Killer", "skull"),
-    Gen       = Window:AddTab("Generator", "settings"),
-    EspMaster = Window:AddTab("Visual", "monitor"),
-    Misc      = Window:AddTab("Misc", "box"),
+    Esp        = Window:AddTab("Esp",           "monitor"),
+    Stam       = Window:AddTab("Stam",          "zap"),
+    AutoBlock  = Window:AddTab("Auto Block",    "shield"),
+    FacingChk  = Window:AddTab("Facing Check",  "eye"),
+    Notice     = Window:AddTab("Notice",        "info"),
+    AutoPunch  = Window:AddTab("Auto Punch",    "sword"),
+    BD         = Window:AddTab("Better Detection", "activity"),
+    Tech       = Window:AddTab("Techs",         "cpu"),
+    Killer     = Window:AddTab("Killer",        "skull"),
+    Gen        = Window:AddTab("Generator",     "settings"),
+    Misc       = Window:AddTab("Misc",          "box"),
     ["UI Settings"] = Window:AddTab("UI Settings", "settings"),
 }
 
--- NOTICE
-Tabs.Notice:AddGroupbox({ Side="Left", Name="Info", IconName="info" }):AddLabel({
-    Text = "Slashsaken\n\n• Auto Block — giant circle around killer (range check)\n• Facing Check — hides giant circle, uses forward circle only\n• HDT — pulls you into killer on every block\n• Flick Protection — don't block when killer flicks fast\n• Auto Punch — fires punch remote on block",
-    DoesWrap = true,
-})
+-- ==========================================
+-- ESP TAB
+-- ==========================================
+local VisL = Tabs.Esp:AddGroupbox({ Side="Left", Name="Players", IconName="users" })
+VisL:AddToggle("ESP_Killer",   { Text="Killer ESP",    Default=false, Callback=function(v) espKillerActive=v end })
+VisL:AddToggle("ESP_Survivor", { Text="Survivors ESP", Default=false, Callback=function(v) espSurvivorActive=v end })
+local VisR = Tabs.Esp:AddGroupbox({ Side="Right", Name="Items", IconName="package" })
+VisR:AddToggle("ESP_Medkit",  { Text="Medkit ESP",    Default=false, Callback=function(v)
+    espMedkitActive=v
+    if v then scanItems("Medkit") else medkitHighlights=clearList(medkitHighlights) end
+end })
+VisR:AddToggle("ESP_Bloxy",   { Text="BloxyCola ESP", Default=false, Callback=function(v)
+    espBloxyActive=v
+    if v then scanItems("BloxyCola") else bloxyHighlights=clearList(bloxyHighlights) end
+end })
+VisR:AddToggle("ESP_Generators", { Text="Generators ESP", Default=false, Callback=function(v)
+    espGeneratorsActive=v; espDoGenerators(v)
+end })
 
--- STAMINA
-local StamL = Tabs.Stamina:AddGroupbox({ Side="Left", Name="Stamina", IconName="zap" })
+-- ==========================================
+-- STAM TAB
+-- ==========================================
+local StamL = Tabs.Stam:AddGroupbox({ Side="Left", Name="Stamina", IconName="zap" })
 StamL:AddToggle("InfStamina", { Text="Infinite Stamina", Default=false, Callback=function(v)
     if v then setStamina() else infinityStaminaActive = false; if staminaThread then task.cancel(staminaThread); staminaThread=nil end end
 end })
 StamL:AddSlider("MaxStaminaSlider", { Text="Max Stamina", Default=maxStaminaValue, Min=1, Max=1000, Rounding=0, Callback=function(v) maxStaminaValue=v; sprintModule.MaxStamina=v end })
 StamL:AddSlider("SprintSpeedSlider", { Text="Sprint Speed", Default=sprintSpeedValue, Min=1, Max=30, Rounding=0, Callback=function(v) sprintSpeedValue=v; sprintModule.SprintSpeed=v end })
-local StamR = Tabs.Stamina:AddGroupbox({ Side="Right", Name="Advanced", IconName="activity" })
+local StamR = Tabs.Stam:AddGroupbox({ Side="Right", Name="Advanced", IconName="activity" })
 StamR:AddSlider("StaminaGainSlider", { Text="Stamina Gain", Default=staminaGainValue, Min=1, Max=1000, Rounding=0, Callback=function(v) staminaGainValue=v; sprintModule.StaminaGain=v end })
 StamR:AddSlider("StaminaDrainSlider", { Text="Stamina Drain", Default=staminaDrainValue, Min=0, Max=1000, Rounding=0, Callback=function(v) staminaDrainValue=v; sprintModule.StaminaDrain=v end })
 StamR:AddSlider("RegenDelaySlider", { Text="Regen Delay", Default=regenDelayValue, Min=0, Max=10, Rounding=1, Callback=function(v) regenDelayValue=v; sprintModule.StaminaRegenDelay=v end })
 
--- AUTO BLOCK
+-- ==========================================
+-- AUTO BLOCK TAB
+-- ==========================================
 local ABL = Tabs.AutoBlock:AddGroupbox({ Side="Left", Name="Auto Block", IconName="shield" })
 ABL:AddToggle("AB_CircleBlock", { Text="Auto Block", Default=true, Tooltip="Blocks when a killer attacks near you", Callback=function(v) autoBlockOn=v end })
 ABL:AddToggle("AB_AudioOn", { Text="Auto Block (Sound React)", Default=false, Callback=function(v) autoBlockAudioOn=v end })
@@ -747,21 +755,11 @@ ABR:AddDivider()
 ABR:AddToggle("AB_MsgWhenBlock", { Text="Message When Blocking", Default=false, Callback=function(v) messageWhenAutoBlockOn=v end })
 ABR:AddInput("AB_BlockMsg", { Text="The message", Default="", Placeholder="Block", ClearTextOnFocus=false, Callback=function(v) messageWhenAutoBlock=v end })
 
--- AUTO PUNCH
-local APL = Tabs.AutoPunch:AddGroupbox({ Side="Left", Name="Auto Punch", IconName="sword" })
-APL:AddToggle("AP_AutoPunch", { Text="Auto Punch (fires punch remote when blocked)", Default=false, Callback=function(v) autoPunchEventEnabled=v end })
-APL:AddToggle("AP_Aimbot", { Text="Aimbot", Default=false, Callback=function(v) MyAnimLockOn=v end })
-APL:AddInput("AP_AimDur", { Text="Aim Lock Duration", Default="0.8", Numeric=true, ClearTextOnFocus=false, Callback=function(v) AIM_WINDOW=tonumber(v) or 0.8 end })
-local APR = Tabs.AutoPunch:AddGroupbox({ Side="Right", Name="Aim Lock Modes", IconName="target" })
-APR:AddToggle("AP_CharLock", { Text="Character Lock", Default=true, Callback=function(v) aimPunchToggles["Character Lock"]=v end })
-APR:AddToggle("AP_CamLock", { Text="Camera Lock", Default=false, Callback=function(v) aimPunchToggles["Camera Lock"]=v end })
-
--- ANTI BAIT (Facing + Flick + Visuals)
-local ABL2 = Tabs.AntiB:AddGroupbox({ Side="Left", Name="Anti Bait", IconName="crosshair" })
-ABL2:AddToggle("AB_WallCheck", { Text="Wall Check", Default=false, Callback=function(v) wallCheckEnabled=v end })
-
-local ABR2 = Tabs.AntiB:AddGroupbox({ Side="Right", Name="Facing Check", IconName="eye" })
-ABR2:AddToggle("AB_FacingCheck", {
+-- ==========================================
+-- FACING CHECK TAB
+-- ==========================================
+local FCLeft = Tabs.FacingChk:AddGroupbox({ Side="Left", Name="Facing", IconName="eye" })
+FCLeft:AddToggle("AB_FacingCheck", {
     Text = "Facing Check (giant circle OFF, forward circle ONLY)",
     Default = true,
     Tooltip = "When ON, blocks only work inside the forward circle in front of the killer. The giant circle is hidden.",
@@ -775,7 +773,7 @@ ABR2:AddToggle("AB_FacingCheck", {
         end
     end,
 })
-ABR2:AddToggle("AB_FacingVisual", {
+FCLeft:AddToggle("AB_FacingVisual", {
     Text = "Facing Visual (circle in front of killer)",
     Default = true,
     Callback = function(v)
@@ -788,7 +786,7 @@ ABR2:AddToggle("AB_FacingVisual", {
         end
     end,
 })
-ABR2:AddToggle("AB_DetectVisual", {
+FCLeft:AddToggle("AB_DetectVisual", {
     Text = "Giant Circle Visual (auto-block range)",
     Default = false,
     Tooltip = "Only visible when Facing Check is OFF",
@@ -802,44 +800,65 @@ ABR2:AddToggle("AB_DetectVisual", {
         end
     end,
 })
-ABR2:AddInput("AB_FacingDot", {
+FCLeft:AddInput("AB_FacingDot", {
     Text = "Facing DOT (0.3 = 72°, higher = tighter)",
     Default = "0.3", Numeric = true, ClearTextOnFocus = false,
     Callback = function(v) customFacingDot = tonumber(v) or 0.3 end,
 })
+FCLeft:AddToggle("AB_WallCheck", { Text="Wall Check", Default=false, Callback=function(v) wallCheckEnabled=v end })
 
--- FLICK PROTECTION
-local FlickBox = Tabs.AntiB:AddGroupbox({ Side="Left", Name="Flick Protection", IconName="wind" })
-FlickBox:AddToggle("FP_On", {
+local FCRight = Tabs.FacingChk:AddGroupbox({ Side="Right", Name="Flick Protection", IconName="wind" })
+FCRight:AddToggle("FP_On", {
     Text = "Enable Flick Protection",
     Default = false,
     Tooltip = "Prevents blocks when the killer is rapidly rotating (flick bait)",
     Callback = function(v) flickProtectionEnabled = v end,
 })
-FlickBox:AddInput("FP_Range", {
+FCRight:AddInput("FP_Range", {
     Text = "Flick Range (studs)",
     Default = "15", Numeric = true, ClearTextOnFocus = false,
     Tooltip = "Only apply flick check when killer is within this distance",
     Callback = function(v) flickRange = tonumber(v) or 15 end,
 })
-FlickBox:AddInput("FP_Threshold", {
+FCRight:AddInput("FP_Threshold", {
     Text = "Flick Threshold (deg/s)",
     Default = "500", Numeric = true, ClearTextOnFocus = false,
     Tooltip = "Killer rotations faster than this are considered a flick",
     Callback = function(v) flickDegPerSecThreshold = tonumber(v) or 500 end,
 })
-FlickBox:AddInput("FP_Window", {
+FCRight:AddInput("FP_Window", {
     Text = "Flick Window (seconds)",
     Default = "0.25", Numeric = true, ClearTextOnFocus = false,
     Tooltip = "How long after a flick blocks stay disabled",
     Callback = function(v) flickWindow = tonumber(v) or 0.25 end,
 })
 
--- BETTER DETECTION
-local BDL = Tabs.BD:AddGroupbox({ Side="Left", Name="Detection", IconName="eye" })
+-- ==========================================
+-- NOTICE TAB
+-- ==========================================
+Tabs.Notice:AddGroupbox({ Side="Left", Name="Info", IconName="info" }):AddLabel({
+    Text = "Slashsaken [Beta]\n\nBy viltrumite\n\n• Auto Block — giant circle around killer\n• Facing Check — forward circle only\n• HDT — walks you into killer (smooth, no teleport)\n• Flick Protection — skip block on fast flicks\n• Auto Punch — fires punch remote on block",
+    DoesWrap = true,
+})
+
+-- ==========================================
+-- AUTO PUNCH TAB
+-- ==========================================
+local APL = Tabs.AutoPunch:AddGroupbox({ Side="Left", Name="Auto Punch", IconName="sword" })
+APL:AddToggle("AP_AutoPunch", { Text="Auto Punch (fires punch remote when blocked)", Default=false, Callback=function(v) autoPunchEventEnabled=v end })
+APL:AddToggle("AP_Aimbot", { Text="Aimbot", Default=false, Callback=function(v) MyAnimLockOn=v end })
+APL:AddInput("AP_AimDur", { Text="Aim Lock Duration", Default="0.8", Numeric=true, ClearTextOnFocus=false, Callback=function(v) AIM_WINDOW=tonumber(v) or 0.8 end })
+local APR = Tabs.AutoPunch:AddGroupbox({ Side="Right", Name="Aim Lock Modes", IconName="target" })
+APR:AddToggle("AP_CharLock", { Text="Character Lock", Default=true, Callback=function(v) aimPunchToggles["Character Lock"]=v end })
+APR:AddToggle("AP_CamLock", { Text="Camera Lock", Default=false, Callback=function(v) aimPunchToggles["Camera Lock"]=v end })
+
+-- ==========================================
+-- BETTER DETECTION TAB
+-- ==========================================
+local BDL = Tabs.BD:AddGroupbox({ Side="Left", Name="Detection", IconName="activity" })
 BDL:AddToggle("BD_On", { Text="Better Detection (anti-flick parts)", Default=false, Callback=function(v) antiFlickOn=v end })
 BDL:AddInput("BD_AntiFlickDelay", { Text="AntiFlick Delay (0 = instant)", Default="0", Numeric=true, ClearTextOnFocus=false, Callback=function(v) local n=tonumber(v); if n then antiFlickDelay=math.max(0,n) end end })
-local BDR = Tabs.BD:AddGroupbox({ Side="Right", Name="Prediction", IconName="activity" })
+local BDR = Tabs.BD:AddGroupbox({ Side="Right", Name="Prediction", IconName="target" })
 BDR:AddInput("BD_PartCount", { Text="Block Parts Count", Default="4", Numeric=true, ClearTextOnFocus=false, Callback=function(v) antiFlickParts=math.max(1,math.floor(tonumber(v) or 4)) end })
 BDR:AddInput("BD_PartSize", { Text="Part Size Multiplier", Default="1", Numeric=true, ClearTextOnFocus=false, Callback=function(v) blockPartsSizeMultiplier=tonumber(v) or 1 end })
 BDR:AddInput("BD_Fwd", { Text="Forward Prediction", Default="1", Numeric=true, ClearTextOnFocus=false, Callback=function(v) predictionStrength=tonumber(v) or 1 end })
@@ -847,15 +866,17 @@ BDR:AddInput("BD_Turn", { Text="Turn Prediction", Default="1", Numeric=true, Cle
 BDR:AddInput("BD_Stagger", { Text="Part Spawn Delay (0 = instant)", Default="0", Numeric=true, ClearTextOnFocus=false, Callback=function(v) local n=tonumber(v); if n then stagger=math.max(0,n) end end })
 BDR:AddInput("BD_Offset", { Text="Offset Infront Killer", Default="2.7", Numeric=true, ClearTextOnFocus=false, Callback=function(v) local n=tonumber(v); if n then antiFlickBaseOffset=math.max(0,n) end end })
 
--- TECHS (HDT)
+-- ==========================================
+-- TECHS TAB
+-- ==========================================
 local TechL = Tabs.Tech:AddGroupbox({ Side="Left", Name="HDT", IconName="cpu" })
 TechL:AddToggle("HDT_On", {
-    Text = "HDT (walk into killer on block)",
+    Text = "HDT (smoothly walk into killer on block)",
     Default = false,
-    Tooltip = "Every time you block, you get pulled into the nearest killer",
+    Tooltip = "Pulls you toward the nearest killer with BodyVelocity — no teleporting",
     Callback = function(v) hitboxDraggingTech = v end,
 })
-TechL:AddInput("HDT_Speed", { Text="Walk speed (studs/s)", Default="5.6", Numeric=true, ClearTextOnFocus=false, Callback=function(v) Dspeed=tonumber(v) or 5.6 end })
+TechL:AddInput("HDT_Speed", { Text="Walk speed (studs/s)", Default="8", Numeric=true, ClearTextOnFocus=false, Callback=function(v) Dspeed=tonumber(v) or 8 end })
 TechL:AddInput("HDT_Delay", { Text="Delay before walk (0 = instant)", Default="0", Numeric=true, ClearTextOnFocus=false, Callback=function(v) Ddelay=tonumber(v) or 0 end })
 local TechR = Tabs.Tech:AddGroupbox({ Side="Right", Name="Exploits", IconName="terminal" })
 TechR:AddButton({ Text="Fake Lag Tech", Func=function()
@@ -870,34 +891,23 @@ TechR:AddButton({ Text="Fake Lag Tech", Func=function()
     end)
 end })
 
--- KILLER
+-- ==========================================
+-- KILLER TAB
+-- ==========================================
 Tabs.Killer:AddGroupbox({ Side="Left", Name="Abilities", IconName="skull" }):AddToggle("Killer_RP", {
     Text="Auto Raging Pace [Beta]", Default=false, Callback=function(v) ragingPaceEnabled=v end
 })
 
--- GENERATOR
+-- ==========================================
+-- GENERATOR TAB
+-- ==========================================
 Tabs.Gen:AddGroupbox({ Side="Left", Name="Generator", IconName="settings" }):AddButton({
     Text="Generator Button", Func=function() loadstring(game:HttpGet("https://pastebin.com/raw/tPWnvGj6"))() end
 })
 
--- VISUAL / ESP
-local VisL = Tabs.EspMaster:AddGroupbox({ Side="Left", Name="Players", IconName="users" })
-VisL:AddToggle("ESP_Killer",   { Text="Killer ESP",    Default=false, Callback=function(v) espKillerActive=v end })
-VisL:AddToggle("ESP_Survivor", { Text="Survivors ESP", Default=false, Callback=function(v) espSurvivorActive=v end })
-local VisR = Tabs.EspMaster:AddGroupbox({ Side="Right", Name="Items", IconName="package" })
-VisR:AddToggle("ESP_Medkit",  { Text="Medkit ESP",    Default=false, Callback=function(v)
-    espMedkitActive=v
-    if v then scanItems("Medkit") else medkitHighlights=clearList(medkitHighlights) end
-end })
-VisR:AddToggle("ESP_Bloxy",   { Text="BloxyCola ESP", Default=false, Callback=function(v)
-    espBloxyActive=v
-    if v then scanItems("BloxyCola") else bloxyHighlights=clearList(bloxyHighlights) end
-end })
-VisR:AddToggle("ESP_Generators", { Text="Generators ESP", Default=false, Callback=function(v)
-    espGeneratorsActive=v; espDoGenerators(v)
-end })
-
--- MISC
+-- ==========================================
+-- MISC TAB
+-- ==========================================
 local MiscL = Tabs.Misc:AddGroupbox({ Side="Left", Name="Chat & Lighting", IconName="message-square" })
 MiscL:AddButton({ Text="Chat Visibility", Func=function()
     if TextChatService:FindFirstChild("ChatWindowConfiguration") and TextChatService:FindFirstChild("ChatInputBarConfiguration") then
@@ -945,7 +955,9 @@ MiscR:AddButton({ Text="Clear Cache", Func=function()
     end)
 end })
 
--- UI SETTINGS
+-- ==========================================
+-- UI SETTINGS TAB
+-- ==========================================
 local UISettings = Tabs["UI Settings"]
 ThemeManager:SetLibrary(Library); SaveManager:SetLibrary(Library)
 SaveManager:IgnoreThemeSettings()

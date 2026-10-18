@@ -192,6 +192,29 @@ local flickDegPerSecThreshold = 500
 local flickWindow             = 0.25
 local flickData               = {}
 
+-- ==========================================
+-- KILLER AUTO-PARRY STATE
+-- ==========================================
+local killerAutoParryEnabled    = false
+local killerParryAnimIds        = {}
+local killerParryRange          = 15
+local killerParryDelay          = 0
+local killerParryCooldown       = 1.0
+local killerParryLastTime       = 0
+local killerParryVisualOn       = true
+local killerParryRangeVisual    = nil
+local killerParryTrackSeen      = setmetatable({}, { __mode = "k" })
+local killerParryLastStatusTime = 0
+
+-- Guest 1337 parry/block animations (used when a Guest blocks another's attack)
+local GUEST_PARRY_ANIMS = {
+    "72722244508749",
+    "96959123077498",
+    "95802026624883",
+    "140671644163156",
+    "100926346851492",
+}
+
 local blockAnimIds  = { "72722244508749","96959123077498","95802026624883","140671644163156","100926346851492" }
 local punchAnimIds  = { "87259391926321","99100240941590","72685103823181","81905101227053","113936304594883","140703210927645","136007065400978","129843313690921","86709774283672","108807732150251","138040001965654","86096387000557","119850211147676","131696603025265","119462383658044","116618003477002","133491532453922","76649505662612","71190646367497" }
 local chargeAnimIds = { "106014898538300" }
@@ -199,10 +222,45 @@ local chargeAnimIds = { "106014898538300" }
 local animsToDetect = {}
 for _, id in ipairs({"87259391926321","99100240941590","72685103823181","81905101227053","113936304594883","140703210927645","136007065400978","129843313690921","86709774283672","108807732150251","138040001965654","86096387000557","119850211147676","131696603025265","119462383658044","116618003477002","133491532453922","76649505662612","71190646367497"}) do animsToDetect[id] = true end
 
+-- ==========================================
+-- SOUND TRIGGERS (killer-owned IDs removed)
+-- ==========================================
 local autoBlockTriggerSounds = {}
-for _, id in ipairs({"102228729296384","140242176732868","112809109188560","136323728355613","115026634746636","84116622032112","108907358619313","127793641088496","86174610237192","95079963655241","101199185291628","119942598489800","84307400688050","113037804008732","105200830849301","75330693422988","82221759983649","81702359653578","108610718831698","112395455254818","109431876587852","109348678063422","85853080745515","12222216","105840448036441","114742322778642","119583605486352","79980897195554","71805956520207","79391273191671","89004992452376","101553872555606","101698569375359","106300477136129","116581754553533","117231507259853","119089145505438","121954639447247","125213046326879","131406927389838","71834552297085","86833981571073","110372418055226","86494585504534","80516583309685","140412278320643","117173212095661","104910828105172","140194172008986","85544168523099","114506382930939","99829427721752","120059928759346","104625283622511","105316545074913","126131675979001","82336352305186","93366464803829","84069821282466","128856426573270","128195973631079","124903763333174","94317217837143","98111231282218","136728245733659","107444859834748","76959687420003","72425554233832","96594507550917","139996647355899","107345261604889","127557531826290","108651070773439","74842815979546","124397369810639","76467993976301","118493324723683","78298577002481","116527305931161","5148302439","98675142200448","128367348686124","103684883268194","109246041199659","80540530406270","139523195429581","105204810054381","116468089135195","133709029886490","124234993291213","98733709078792","99856718263455","74809026448465","99215225043220","79612713897495"}) do autoBlockTriggerSounds[id] = true end
+for _, id in ipairs({
+    "102228729296384","140242176732868","112809109188560","136323728355613","115026634746636",
+    "84116622032112","108907358619313","127793641088496","86174610237192","95079963655241",
+    "101199185291628","119942598489800","84307400688050","105200830849301","75330693422988",
+    "82221759983649","81702359653578","108610718831698","112395455254818","109431876587852",
+    "109348678063422","85853080745515","12222216","105840448036441","114742322778642",
+    "119583605486352","79980897195554","71805956520207","79391273191671","89004992452376",
+    "101553872555606","101698569375359","106300477136129","116581754553533","117231507259853",
+    "119089145505438","121954639447247","125213046326879","131406927389838","86833981571073",
+    "110372418055226","86494585504534","80516583309685","140412278320643","117173212095661",
+    "140194172008986","85544168523099","114506382930939","99829427721752","120059928759346",
+    "104625283622511","105316545074913","126131675979001","82336352305186","93366464803829",
+    "84069821282466","128856426573270","128195973631079","124903763333174","94317217837143",
+    "98111231282218","136728245733659","107444859834748","76959687420003","72425554233832",
+    "96594507550917","139996647355899","107345261604889","127557531826290","108651070773439",
+    "74842815979546","124397369810639","76467993976301","118493324723683","5148302439",
+    "98675142200448","128367348686124","103684883268194","109246041199659","80540530406270",
+    "139523195429581","105204810054381","116468089135195","133709029886490","124234993291213",
+    "98733709078792","99856718263455","74809026448465","99215225043220","79612713897495",
+}) do autoBlockTriggerSounds[id] = true end
 
-local autoBlockTriggerAnims = {"114506382930939","127245564598429","99829427721752","138938529389204","111647315359080","92567970681901","124269076578545","94958041603347","109667959938617","130958529065375","118298475669935","126830014841198","18885909645","98456918873918","105458270463374","83829782357897","125403313786645","82113744478546","70371667919898","99135633258223","7167027849946","109230267448394","139835501033932","126996426760253","88451353906104","106538427162796","122709416391891","139309647473555","90620531468240","91509234639766","99824350842479","126171487400618","101101433684051","106860049270347","70483423693126","126727756047566","137642639873297","77375846492436","121293883585738","81639435858902","137314737492715","92173139187970","108196996477620","90819435118493","123172382755876"}
+-- ==========================================
+-- ANIM TRIGGERS
+-- ==========================================
+local autoBlockTriggerAnims = {
+    "114506382930939","127245564598429","99829427721752","138938529389204","111647315359080",
+    "92567970681901","124269076578545","94958041603347","109667959938617","130958529065375",
+    "118298475669935","126830014841198","18885909645","98456918873918","105458270463374",
+    "83829782357897","125403313786645","82113744478546","70371667919898","99135633258223",
+    "7167027849946","109230267448394","126996426760253","106538427162796","122709416391891",
+    "90620531468240","91509234639766","99824350842479","126171487400618","101101433684051",
+    "106860049270347","70483423693126","126727756047566","137642639873297","77375846492436",
+    "121293883585738","81639435858902","137314737492715","92173139187970","108196996477620",
+    "90819435118493","123172382755876"
+}
 
 local killerState       = {}
 local soundHooks        = {}
@@ -216,28 +274,19 @@ local facingVisuals     = {}
 local function isHelpless()
     local char = lp.Character
     if not char then return true end
-
-    -- Attribute checks
     if char:GetAttribute("Helpless") == true then return true end
     if char:GetAttribute("Stunned") == true then return true end
-
-    -- Child object checks
     if char:FindFirstChild("Helpless") then return true end
     if char:FindFirstChild("Stunned") then return true end
-
-    -- StatusEffects / Status folder
     local se = char:FindFirstChild("StatusEffects")
     if se and (se:FindFirstChild("Helpless") or se:FindFirstChild("Stunned")) then return true end
     local st = char:FindFirstChild("Status")
     if st and (st:FindFirstChild("Helpless") or st:FindFirstChild("Stunned")) then return true end
-
-    -- Humanoid attribute
     local hum = char:FindFirstChildOfClass("Humanoid")
     if hum then
         if hum:GetAttribute("Helpless") == true then return true end
         if hum.Health <= 0 then return true end
     end
-
     return false
 end
 
@@ -268,6 +317,94 @@ end
 local function getKillerHRP(model)
     if not model then return nil end
     return model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true)
+end
+
+-- ==========================================
+-- KILLER AUTO-PARRY HELPERS
+-- ==========================================
+local function fireKillerAbility(name)
+    if not name or name == "" then return end
+    local bytes = { 3, #name, 0, 0, 0 }
+    for i = 1, #name do
+        table.insert(bytes, string.byte(name, i))
+    end
+    testRemote:FireServer("UseActorAbility", {
+        (function(b)
+            local buf = buffer.create(#b)
+            for i = 1, #b do buffer.writeu8(buf, i - 1, b[i]) end
+            return buf
+        end)(bytes)
+    })
+end
+
+local function getMyKillerName()
+    local PlayersFolder = Workspace:FindFirstChild("Players")
+    if not PlayersFolder then return nil end
+    local Killers = PlayersFolder:FindFirstChild("Killers")
+    if not Killers then return nil end
+    for _, model in ipairs(Killers:GetChildren()) do
+        if model:IsA("Model") then
+            local player = Players:GetPlayerFromCharacter(model)
+            if player == lp then return model.Name end
+        end
+    end
+    return nil
+end
+
+local function isSupportedKiller(name)
+    if not name then return false end
+    local lower = name:lower()
+    return lower == "johndoe" or lower == "slasher"
+end
+
+local function abilityForKiller(name)
+    if not name then return nil end
+    local lower = name:lower()
+    if lower == "johndoe" then return "404Error"   end
+    if lower == "slasher" then return "RagingPace" end
+    return nil
+end
+
+local function getAllOtherCharacters()
+    local list = {}
+    local PlayersFolder = Workspace:FindFirstChild("Players")
+    if not PlayersFolder then return list end
+    for _, folderName in ipairs({ "Survivors", "Killers" }) do
+        local folder = PlayersFolder:FindFirstChild(folderName)
+        if folder then
+            for _, model in ipairs(folder:GetChildren()) do
+                if model:IsA("Model") and model ~= lp.Character then
+                    table.insert(list, model)
+                end
+            end
+        end
+    end
+    return list
+end
+
+local function updateKillerParryAnims(str)
+    killerParryAnimIds = {}
+    for id in tostring(str or ""):gmatch("%d+") do
+        killerParryAnimIds[id] = true
+    end
+    for _, id in ipairs(GUEST_PARRY_ANIMS) do
+        killerParryAnimIds[id] = true
+    end
+end
+
+local function setKillerParryLastLabel(txt)
+    pcall(function()
+        Options.KP_LastTrigger:SetText("Last trigger: " .. tostring(txt))
+    end)
+end
+
+local function setKillerParryStatus(txt)
+    local now = tick()
+    if now - killerParryLastStatusTime < 1 then return end
+    killerParryLastStatusTime = now
+    pcall(function()
+        Options.KP_Status:SetText("Status: " .. tostring(txt))
+    end)
 end
 
 -- ==========================================
@@ -318,7 +455,6 @@ local function beginDragIntoKiller(killerModel)
     if not targetHRP then return end
 
     _hitboxDraggingDebounce = true
-
     local oldAutoRotate = humanoid.AutoRotate
     pcall(function() humanoid.AutoRotate = false end)
 
@@ -373,22 +509,16 @@ local function beginDragIntoKiller(killerModel)
 end
 
 -- ==========================================
--- REMOTE FIRING (with helpless + cooldown)
+-- REMOTE FIRING (helpless guard + 27s combo cooldown)
 -- ==========================================
 local function fireRemoteBlock()
-    -- 1. Helpless → bail WITHOUT starting cooldown
     if isHelpless() then return end
-
-    -- 2. Combo on cooldown → bail
     if hitboxDraggingTech and comboCooldownActive and (tick() - lastComboTime) < COMBO_COOLDOWN then
         return
     end
-
     testRemote:FireServer("UseActorAbility", {
         (function(b) local buf=buffer.create(#b); for i=1,#b do buffer.writeu8(buf,i-1,b[i]) end; return buf end)({3,5,0,0,0,66,108,111,99,107})
     })
-
-    -- 3. HDT on → start cooldown + drag
     if hitboxDraggingTech then
         comboCooldownActive = true
         lastComboTime       = tick()
@@ -756,6 +886,7 @@ local Window = Library:CreateWindow({
     AutoShow         = false,
 })
 
+-- Tab order: Esp → Stam → Auto Block → Facing Check → rest
 local Tabs = {
     Esp        = Window:AddTab("Esp",           "monitor"),
     Stam       = Window:AddTab("Stam",          "zap"),
@@ -771,9 +902,7 @@ local Tabs = {
     ["UI Settings"] = Window:AddTab("UI Settings", "settings"),
 }
 
--- ==========================================
 -- ESP TAB
--- ==========================================
 local VisL = Tabs.Esp:AddGroupbox({ Side="Left", Name="Players", IconName="users" })
 VisL:AddToggle("ESP_Killer",   { Text="Killer ESP",    Default=false, Callback=function(v) espKillerActive=v end })
 VisL:AddToggle("ESP_Survivor", { Text="Survivors ESP", Default=false, Callback=function(v) espSurvivorActive=v end })
@@ -790,9 +919,7 @@ VisR:AddToggle("ESP_Generators", { Text="Generators ESP", Default=false, Callbac
     espGeneratorsActive=v; espDoGenerators(v)
 end })
 
--- ==========================================
 -- STAM TAB
--- ==========================================
 local StamL = Tabs.Stam:AddGroupbox({ Side="Left", Name="Stamina", IconName="zap" })
 StamL:AddToggle("InfStamina", { Text="Infinite Stamina", Default=false, Callback=function(v)
     if v then setStamina() else infinityStaminaActive = false; if staminaThread then task.cancel(staminaThread); staminaThread=nil end end
@@ -804,9 +931,7 @@ StamR:AddSlider("StaminaGainSlider", { Text="Stamina Gain", Default=staminaGainV
 StamR:AddSlider("StaminaDrainSlider", { Text="Stamina Drain", Default=staminaDrainValue, Min=0, Max=1000, Rounding=0, Callback=function(v) staminaDrainValue=v; sprintModule.StaminaDrain=v end })
 StamR:AddSlider("RegenDelaySlider", { Text="Regen Delay", Default=regenDelayValue, Min=0, Max=10, Rounding=1, Callback=function(v) regenDelayValue=v; sprintModule.StaminaRegenDelay=v end })
 
--- ==========================================
 -- AUTO BLOCK TAB
--- ==========================================
 local ABL = Tabs.AutoBlock:AddGroupbox({ Side="Left", Name="Auto Block", IconName="shield" })
 ABL:AddToggle("AB_CircleBlock", { Text="Auto Block", Default=true, Tooltip="Blocks when a killer attacks near you", Callback=function(v) autoBlockOn=v end })
 ABL:AddToggle("AB_AudioOn", { Text="Auto Block (Sound React)", Default=false, Callback=function(v) autoBlockAudioOn=v end })
@@ -820,9 +945,7 @@ ABR:AddDivider()
 ABR:AddToggle("AB_MsgWhenBlock", { Text="Message When Blocking", Default=false, Callback=function(v) messageWhenAutoBlockOn=v end })
 ABR:AddInput("AB_BlockMsg", { Text="The message", Default="", Placeholder="Block", ClearTextOnFocus=false, Callback=function(v) messageWhenAutoBlock=v end })
 
--- ==========================================
 -- FACING CHECK TAB
--- ==========================================
 local FCLeft = Tabs.FacingChk:AddGroupbox({ Side="Left", Name="Facing", IconName="eye" })
 FCLeft:AddToggle("AB_FacingCheck", {
     Text = "Facing Check (giant circle OFF, forward circle ONLY)",
@@ -879,36 +1002,17 @@ FCRight:AddToggle("FP_On", {
     Tooltip = "Prevents blocks when the killer is rapidly rotating (flick bait)",
     Callback = function(v) flickProtectionEnabled = v end,
 })
-FCRight:AddInput("FP_Range", {
-    Text = "Flick Range (studs)",
-    Default = "15", Numeric = true, ClearTextOnFocus = false,
-    Tooltip = "Only apply flick check when killer is within this distance",
-    Callback = function(v) flickRange = tonumber(v) or 15 end,
-})
-FCRight:AddInput("FP_Threshold", {
-    Text = "Flick Threshold (deg/s)",
-    Default = "500", Numeric = true, ClearTextOnFocus = false,
-    Tooltip = "Killer rotations faster than this are considered a flick",
-    Callback = function(v) flickDegPerSecThreshold = tonumber(v) or 500 end,
-})
-FCRight:AddInput("FP_Window", {
-    Text = "Flick Window (seconds)",
-    Default = "0.25", Numeric = true, ClearTextOnFocus = false,
-    Tooltip = "How long after a flick blocks stay disabled",
-    Callback = function(v) flickWindow = tonumber(v) or 0.25 end,
-})
+FCRight:AddInput("FP_Range", { Text = "Flick Range (studs)", Default = "15", Numeric = true, ClearTextOnFocus = false, Callback = function(v) flickRange = tonumber(v) or 15 end })
+FCRight:AddInput("FP_Threshold", { Text = "Flick Threshold (deg/s)", Default = "500", Numeric = true, ClearTextOnFocus = false, Callback = function(v) flickDegPerSecThreshold = tonumber(v) or 500 end })
+FCRight:AddInput("FP_Window", { Text = "Flick Window (seconds)", Default = "0.25", Numeric = true, ClearTextOnFocus = false, Callback = function(v) flickWindow = tonumber(v) or 0.25 end })
 
--- ==========================================
 -- NOTICE TAB
--- ==========================================
 Tabs.Notice:AddGroupbox({ Side="Left", Name="Info", IconName="info" }):AddLabel({
-    Text = "Slashsaken [Beta]\n\nBy viltrumite\n\n• Auto Block — giant circle around killer\n• Facing Check — forward circle only\n• HDT — walks you into killer (smooth, no teleport) with 27s cooldown\n• Helpless guard — block/HDT skip while helpless (cooldown not triggered)\n• Auto Punch — fires punch remote on block",
+    Text = "Slashsaken [Beta]\n\nBy viltrumite\n\n• Auto Block — giant circle around killer\n• Facing Check — forward circle only\n• HDT — walks you into killer (smooth) with 27s cooldown\n• Helpless guard — block/HDT skip while helpless\n• Killer Auto-Parry — 404Error/RagingPace on parry anims (JohnDoe/Slasher only)\n• Auto Punch — fires punch remote on block",
     DoesWrap = true,
 })
 
--- ==========================================
 -- AUTO PUNCH TAB
--- ==========================================
 local APL = Tabs.AutoPunch:AddGroupbox({ Side="Left", Name="Auto Punch", IconName="sword" })
 APL:AddToggle("AP_AutoPunch", { Text="Auto Punch (fires punch remote when blocked)", Default=false, Callback=function(v) autoPunchEventEnabled=v end })
 APL:AddToggle("AP_Aimbot", { Text="Aimbot", Default=false, Callback=function(v) MyAnimLockOn=v end })
@@ -917,9 +1021,7 @@ local APR = Tabs.AutoPunch:AddGroupbox({ Side="Right", Name="Aim Lock Modes", Ic
 APR:AddToggle("AP_CharLock", { Text="Character Lock", Default=true, Callback=function(v) aimPunchToggles["Character Lock"]=v end })
 APR:AddToggle("AP_CamLock", { Text="Camera Lock", Default=false, Callback=function(v) aimPunchToggles["Camera Lock"]=v end })
 
--- ==========================================
 -- BETTER DETECTION TAB
--- ==========================================
 local BDL = Tabs.BD:AddGroupbox({ Side="Left", Name="Detection", IconName="activity" })
 BDL:AddToggle("BD_On", { Text="Better Detection (anti-flick parts)", Default=false, Callback=function(v) antiFlickOn=v end })
 BDL:AddInput("BD_AntiFlickDelay", { Text="AntiFlick Delay (0 = instant)", Default="0", Numeric=true, ClearTextOnFocus=false, Callback=function(v) local n=tonumber(v); if n then antiFlickDelay=math.max(0,n) end end })
@@ -931,9 +1033,7 @@ BDR:AddInput("BD_Turn", { Text="Turn Prediction", Default="1", Numeric=true, Cle
 BDR:AddInput("BD_Stagger", { Text="Part Spawn Delay (0 = instant)", Default="0", Numeric=true, ClearTextOnFocus=false, Callback=function(v) local n=tonumber(v); if n then stagger=math.max(0,n) end end })
 BDR:AddInput("BD_Offset", { Text="Offset Infront Killer", Default="2.7", Numeric=true, ClearTextOnFocus=false, Callback=function(v) local n=tonumber(v); if n then antiFlickBaseOffset=math.max(0,n) end end })
 
--- ==========================================
--- TECHS TAB (HDT with duration slider + cooldown label)
--- ==========================================
+-- TECHS TAB
 local TechL = Tabs.Tech:AddGroupbox({ Side="Left", Name="HDT", IconName="cpu" })
 TechL:AddToggle("HDT_On", {
     Text = "HDT (smoothly walk into killer on block)",
@@ -953,10 +1053,7 @@ TechL:AddSlider("HDT_Duration", {
 })
 TechL:AddInput("HDT_Speed", { Text="Walk speed (studs/s)", Default="8", Numeric=true, ClearTextOnFocus=false, Callback=function(v) Dspeed=tonumber(v) or 8 end })
 TechL:AddInput("HDT_Delay", { Text="Delay before walk (0 = instant)", Default="0", Numeric=true, ClearTextOnFocus=false, Callback=function(v) Ddelay=tonumber(v) or 0 end })
-TechL:AddLabel("HDT_CooldownLabel", {
-    Text = "Cooldown: Ready",
-    DoesWrap = false,
-})
+TechL:AddLabel("HDT_CooldownLabel", { Text = "Cooldown: Ready", DoesWrap = false })
 
 task.spawn(function()
     while true do
@@ -964,9 +1061,7 @@ task.spawn(function()
         if comboCooldownActive then
             local remaining = COMBO_COOLDOWN - (tick() - lastComboTime)
             if remaining > 0 then
-                pcall(function()
-                    Options.HDT_CooldownLabel:SetText(string.format("Cooldown: %.1fs", remaining))
-                end)
+                pcall(function() Options.HDT_CooldownLabel:SetText(string.format("Cooldown: %.1fs", remaining)) end)
             else
                 comboCooldownActive = false
                 pcall(function() Options.HDT_CooldownLabel:SetText("Cooldown: Ready") end)
@@ -990,23 +1085,56 @@ TechR:AddButton({ Text="Fake Lag Tech", Func=function()
     end)
 end })
 
--- ==========================================
 -- KILLER TAB
--- ==========================================
-Tabs.Killer:AddGroupbox({ Side="Left", Name="Abilities", IconName="skull" }):AddToggle("Killer_RP", {
+local KillerAbilities = Tabs.Killer:AddGroupbox({ Side="Left", Name="Abilities", IconName="skull" })
+KillerAbilities:AddToggle("Killer_RP", {
     Text="Auto Raging Pace [Beta]", Default=false, Callback=function(v) ragingPaceEnabled=v end
 })
 
--- ==========================================
+-- KILLER AUTO-PARRY UI
+local KPBox = Tabs.Killer:AddGroupbox({ Side = "Right", Name = "Killer Auto-Parry", IconName = "shield-alert" })
+KPBox:AddToggle("KP_On", {
+    Text = "Killer Auto-Parry",
+    Default = false,
+    Tooltip = "Only fires as JohnDoe (404Error) or Slasher (RagingPace). Auto-detects which ability to use.",
+    Callback = function(v) killerAutoParryEnabled = v end,
+})
+KPBox:AddInput("KP_AnimIds", {
+    Text = "Extra Parry Anim IDs (comma-separated)",
+    Default = "116618003477002,111918351126361,108018357044094,83745199070305,133491532453922,90499469533503",
+    ClearTextOnFocus = false,
+    Tooltip = "Guest 1337 parry anims are auto-added. Punch anims are NOT used.",
+    Callback = function(v) updateKillerParryAnims(v) end,
+})
+KPBox:AddInput("KP_Range", {
+    Text = "Circle Range (studs)",
+    Default = "15", Numeric = true, ClearTextOnFocus = false,
+    Callback = function(v) killerParryRange = tonumber(v) or 15 end,
+})
+KPBox:AddInput("KP_Delay", {
+    Text = "Delay (0 = instant)",
+    Default = "0", Numeric = true, ClearTextOnFocus = false,
+    Callback = function(v) killerParryDelay = tonumber(v) or 0 end,
+})
+KPBox:AddInput("KP_Cooldown", {
+    Text = "Cooldown (seconds)",
+    Default = "1", Numeric = true, ClearTextOnFocus = false,
+    Callback = function(v) killerParryCooldown = tonumber(v) or 1 end,
+})
+KPBox:AddToggle("KP_Visual", {
+    Text = "Show Range Circle",
+    Default = true,
+    Callback = function(v) killerParryVisualOn = v end,
+})
+KPBox:AddLabel("KP_Status",      { Text = "Status: Standby", DoesWrap = false })
+KPBox:AddLabel("KP_LastTrigger", { Text = "Last trigger: None", DoesWrap = false })
+
 -- GENERATOR TAB
--- ==========================================
 Tabs.Gen:AddGroupbox({ Side="Left", Name="Generator", IconName="settings" }):AddButton({
     Text="Generator Button", Func=function() loadstring(game:HttpGet("https://pastebin.com/raw/tPWnvGj6"))() end
 })
 
--- ==========================================
 -- MISC TAB
--- ==========================================
 local MiscL = Tabs.Misc:AddGroupbox({ Side="Left", Name="Chat & Lighting", IconName="message-square" })
 MiscL:AddButton({ Text="Chat Visibility", Func=function()
     if TextChatService:FindFirstChild("ChatWindowConfiguration") and TextChatService:FindFirstChild("ChatInputBarConfiguration") then
@@ -1054,9 +1182,7 @@ MiscR:AddButton({ Text="Clear Cache", Func=function()
     end)
 end })
 
--- ==========================================
 -- UI SETTINGS
--- ==========================================
 local UISettings = Tabs["UI Settings"]
 ThemeManager:SetLibrary(Library); SaveManager:SetLibrary(Library)
 SaveManager:IgnoreThemeSettings()
@@ -1077,9 +1203,6 @@ Library.ToggleKeybind = Options.MenuKeybind
 Library:OnUnload(function() print("Slashsaken unloaded!") end)
 SaveManager:LoadAutoloadConfig()
 
--- ==========================================
--- OPEN WINDOW 3 SECONDS AFTER START
--- ==========================================
 task.delay(3, function()
     pcall(function() Library:Toggle() end)
     pcall(function() Window:Show() end)
@@ -1102,9 +1225,10 @@ task.spawn(function()
     end
 end)
 
--- ==========================================
+-- Seed killer auto-parry anims (in case the input callback never fires on load)
+updateKillerParryAnims("116618003477002,111918351126361,108018357044094,83745199070305,133491532453922,90499469533503")
+
 -- AUTO PUNCH HOOK
--- ==========================================
 task.spawn(function()
     local ok, networkModule = pcall(function()
         return require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Network"):WaitForChild("Network"))
@@ -1123,9 +1247,7 @@ task.spawn(function()
     lp.CharacterAdded:Connect(function() task.wait(0.9); connect() end)
 end)
 
--- ==========================================
--- AUTO BLOCK MAIN LOOP (helpless check at top)
--- ==========================================
+-- AUTO BLOCK MAIN LOOP
 RunService.RenderStepped:Connect(function()
     if not autoBlockOn then return end
     if isHelpless() then return end
@@ -1167,9 +1289,7 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- ==========================================
 -- AIM LOCK
--- ==========================================
 RunService.RenderStepped:Connect(function()
     local aimPunch = MyAnimLockOn or aimPunchToggles["Character Lock"]
     local camLock  = aimPunchToggles["Camera Lock"]
@@ -1213,12 +1333,9 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- ==========================================
 -- VISUAL UPDATER
--- ==========================================
 RunService.RenderStepped:Connect(function()
     local myRoot = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
-
     for killer, v in pairs(facingVisuals) do
         if not killer.Parent or not killer:FindFirstChild("HumanoidRootPart") then
             removeFacingVisual(killer)
@@ -1229,17 +1346,14 @@ RunService.RenderStepped:Connect(function()
             v.Height = 0.12
             v.CFrame = CFrame.new(0, -(hrp.Size.Y / 2 + 0.05), -(center - hrp.Position).Magnitude)
                        * CFrame.Angles(math.rad(90), 0, 0)
-
             local visible = facingCheckEnabled or facingVisualOn
             v.Transparency = visible and 0.5 or 1
-
             if myRoot then
                 local inside = (myRoot.Position - center).Magnitude <= radius
                 v.Color3 = inside and Color3.fromRGB(255, 60, 60) or Color3.fromRGB(255, 255, 0)
             end
         end
     end
-
     for killer, c in pairs(detectionCircles) do
         if c and c.Parent and killer:FindFirstChild("HumanoidRootPart") then
             local visible = killerCirclesVisible and not facingCheckEnabled
@@ -1253,9 +1367,7 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- ==========================================
 -- KILLER STATE + FLICK DETECTION
--- ==========================================
 RunService.RenderStepped:Connect(function(dt)
     if dt <= 0 then return end
     local folder = getKillersFolder()
@@ -1284,15 +1396,12 @@ RunService.RenderStepped:Connect(function(dt)
                     flickData[k] = { lastFlickTick = tick() }
                 end
             end
-
             killerState[k] = st
         end
     end
 end)
 
--- ==========================================
 -- FOLDER WATCHER
--- ==========================================
 task.spawn(function()
     while true do
         local folder = getKillersFolder()
@@ -1319,9 +1428,7 @@ task.spawn(function()
     end
 end)
 
--- ==========================================
--- HDT BLOCK-ANIM TRIGGER (backup for manual blocks)
--- ==========================================
+-- HDT BLOCK-ANIM TRIGGER
 RunService.RenderStepped:Connect(function()
     if not hitboxDraggingTech then return end
     if isHelpless() then return end
@@ -1347,9 +1454,7 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- ==========================================
 -- ESP UPDATER
--- ==========================================
 task.spawn(function()
     while true do
         task.wait(1.5)
@@ -1386,9 +1491,7 @@ Workspace.DescendantAdded:Connect(function(d)
     end
 end)
 
--- ==========================================
 -- MESSAGES LOOP
--- ==========================================
 local BAD_DEVICE_MODE = true
 local FRAME_BUDGET = BAD_DEVICE_MODE and 0.08 or 0.033
 local lastMainTick = 0
@@ -1397,7 +1500,6 @@ RunService.RenderStepped:Connect(function()
     local now = tick()
     if now - lastMainTick < FRAME_BUDGET then return end
     lastMainTick = now
-
     local myChar = lp.Character
     if not myChar then return end
     local myRoot = myChar:FindFirstChild("HumanoidRootPart")
@@ -1450,6 +1552,88 @@ RunService.RenderStepped:Connect(function()
         end
         _blockPrevPlaying = currentPlaying
     end
+end)
+
+-- ==========================================
+-- KILLER AUTO-PARRY — detection loop
+-- ==========================================
+RunService.Heartbeat:Connect(function()
+    if not killerAutoParryEnabled then return end
+
+    local myKiller = getMyKillerName()
+    if not isSupportedKiller(myKiller) then
+        setKillerParryStatus(myKiller and ("Not supported: " .. myKiller) or "Not a killer")
+        return
+    end
+    setKillerParryStatus("Active as " .. myKiller)
+
+    if tick() - killerParryLastTime < killerParryCooldown then return end
+
+    local myRoot = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return end
+
+    local ability = abilityForKiller(myKiller)
+    if not ability then return end
+
+    for _, char in ipairs(getAllOtherCharacters()) do
+        local tgtRoot = char:FindFirstChild("HumanoidRootPart")
+        if tgtRoot and (tgtRoot.Position - myRoot.Position).Magnitude <= killerParryRange then
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            local animator = hum and hum:FindFirstChildOfClass("Animator")
+            if animator then
+                for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+                    if not killerParryTrackSeen[track] then
+                        local ok, animId = pcall(function()
+                            return tostring(track.Animation and track.Animation.AnimationId or ""):match("%d+")
+                        end)
+                        if ok and animId and killerParryAnimIds[animId] then
+                            killerParryTrackSeen[track] = true
+                            killerParryLastTime       = tick()
+                            setKillerParryLastLabel(char.Name .. " / " .. animId .. " → " .. ability)
+                            if killerParryDelay > 0 then
+                                task.delay(killerParryDelay, function()
+                                    fireKillerAbility(ability)
+                                end)
+                            else
+                                fireKillerAbility(ability)
+                            end
+                            break
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- ==========================================
+-- KILLER AUTO-PARRY — range circle visual
+-- ==========================================
+RunService.RenderStepped:Connect(function()
+    local myChar = lp.Character
+    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    local myKiller = getMyKillerName()
+    local shouldShow = killerParryVisualOn and killerAutoParryEnabled and myRoot and isSupportedKiller(myKiller)
+    if not shouldShow then
+        if killerParryRangeVisual and killerParryRangeVisual.Parent then
+            killerParryRangeVisual:Destroy()
+        end
+        killerParryRangeVisual = nil
+        return
+    end
+    if not killerParryRangeVisual or not killerParryRangeVisual.Parent then
+        killerParryRangeVisual = Instance.new("CylinderHandleAdornment")
+        killerParryRangeVisual.Name         = "KillerParryRange"
+        killerParryRangeVisual.Adornee      = myRoot
+        killerParryRangeVisual.AlwaysOnTop  = true
+        killerParryRangeVisual.Color3       = Color3.fromRGB(180, 50, 255)
+        killerParryRangeVisual.Transparency = 0.55
+        killerParryRangeVisual.Height       = 0.1
+        killerParryRangeVisual.ZIndex       = 1
+        killerParryRangeVisual.Parent       = myRoot
+    end
+    killerParryRangeVisual.Radius = killerParryRange
+    killerParryRangeVisual.CFrame = CFrame.new(0, -(myRoot.Size.Y / 2 + 0.05), 0) * CFrame.Angles(math.rad(90), 0, 0)
 end)
 
 -- ==========================================

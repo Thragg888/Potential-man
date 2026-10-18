@@ -164,8 +164,12 @@ local predictionTurnStrength = 1
 local blockPartsSizeMultiplier = 1
 local hitboxDraggingTech     = false
 local _hitboxDraggingDebounce = false
-local Dspeed                 = 8      -- smoother default (no more 3x multiplier)
+local Dspeed                 = 8
 local Ddelay                 = 0
+local HDT_DURATION           = 1.5
+local COMBO_COOLDOWN         = 27
+local lastComboTime          = 0
+local comboCooldownActive    = false
 local MyAnimLockOn           = false
 local AIM_WINDOW             = 0.8
 local predictionValue        = 4
@@ -205,6 +209,37 @@ local soundHooks        = {}
 local soundBlockedUntil = {}
 local detectionCircles  = {}
 local facingVisuals     = {}
+
+-- ==========================================
+-- HELPLESS DETECTION
+-- ==========================================
+local function isHelpless()
+    local char = lp.Character
+    if not char then return true end
+
+    -- Attribute checks
+    if char:GetAttribute("Helpless") == true then return true end
+    if char:GetAttribute("Stunned") == true then return true end
+
+    -- Child object checks
+    if char:FindFirstChild("Helpless") then return true end
+    if char:FindFirstChild("Stunned") then return true end
+
+    -- StatusEffects / Status folder
+    local se = char:FindFirstChild("StatusEffects")
+    if se and (se:FindFirstChild("Helpless") or se:FindFirstChild("Stunned")) then return true end
+    local st = char:FindFirstChild("Status")
+    if st and (st:FindFirstChild("Helpless") or st:FindFirstChild("Stunned")) then return true end
+
+    -- Humanoid attribute
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        if hum:GetAttribute("Helpless") == true then return true end
+        if hum.Health <= 0 then return true end
+    end
+
+    return false
+end
 
 -- ==========================================
 -- GETTERS
@@ -268,7 +303,7 @@ local function isKillerFlicking(killer, myRoot, killerHRP)
 end
 
 -- ==========================================
--- HDT DRAG (SMOOTH — NO TELEPORT)
+-- HDT DRAG (smooth + look-at)
 -- ==========================================
 local function beginDragIntoKiller(killerModel)
     if _hitboxDraggingDebounce then return end
@@ -284,12 +319,21 @@ local function beginDragIntoKiller(killerModel)
 
     _hitboxDraggingDebounce = true
 
-    -- Use ONLY BodyVelocity for smooth movement (no CFrame teleporting)
+    local oldAutoRotate = humanoid.AutoRotate
+    pcall(function() humanoid.AutoRotate = false end)
+
     local bv = Instance.new("BodyVelocity")
     bv.Name     = "HDT_BV"
-    bv.MaxForce = Vector3.new(8e4, 0, 8e4)  -- firm but not infinite → smooth accel
+    bv.MaxForce = Vector3.new(8e4, 0, 8e4)
     bv.Velocity = Vector3.new(0, 0, 0)
     bv.Parent   = hrp
+
+    local bg = Instance.new("BodyGyro")
+    bg.Name      = "HDT_Gyro"
+    bg.MaxTorque = Vector3.new(4e5, 4e5, 4e5)
+    bg.D         = 100
+    bg.P         = 3000
+    bg.Parent    = hrp
 
     local speed = Dspeed or 8
 
@@ -298,6 +342,8 @@ local function beginDragIntoKiller(killerModel)
         if not _hitboxDraggingDebounce then
             conn:Disconnect()
             if bv and bv.Parent then pcall(function() bv:Destroy() end) end
+            if bg and bg.Parent then pcall(function() bg:Destroy() end) end
+            if humanoid then pcall(function() humanoid.AutoRotate = oldAutoRotate end) end
             return
         end
         if not (char and char.Parent) or not (killerModel and killerModel.Parent) then
@@ -306,29 +352,49 @@ local function beginDragIntoKiller(killerModel)
         end
         local t = getKillerHRP(killerModel)
         if not t then _hitboxDraggingDebounce = false; return end
+
+        if bg and bg.Parent then
+            pcall(function()
+                bg.CFrame = CFrame.lookAt(hrp.Position, Vector3.new(t.Position.X, hrp.Position.Y, t.Position.Z))
+            end)
+        end
+
         local toTarget = t.Position - hrp.Position
         local horiz = Vector3.new(toTarget.X, 0, toTarget.Z)
         local dist = horiz.Magnitude
         if dist <= 2.0 then _hitboxDraggingDebounce = false; return end
         local dir = horiz.Unit
-        -- Pure velocity (smooth, no CFrame jumps)
         bv.Velocity = Vector3.new(dir.X * speed, bv.Velocity.Y, dir.Z * speed)
     end)
 
-    -- 3s timeout so lower speeds have enough time to actually reach
-    task.delay(3, function()
+    task.delay(HDT_DURATION, function()
         if _hitboxDraggingDebounce then _hitboxDraggingDebounce = false end
     end)
 end
 
 -- ==========================================
--- REMOTE FIRING
+-- REMOTE FIRING (with helpless + cooldown)
 -- ==========================================
 local function fireRemoteBlock()
+    -- 1. Helpless → bail WITHOUT starting cooldown
+    if isHelpless() then return end
+
+    -- 2. Combo on cooldown → bail
+    if hitboxDraggingTech and comboCooldownActive and (tick() - lastComboTime) < COMBO_COOLDOWN then
+        return
+    end
+
     testRemote:FireServer("UseActorAbility", {
         (function(b) local buf=buffer.create(#b); for i=1,#b do buffer.writeu8(buf,i-1,b[i]) end; return buf end)({3,5,0,0,0,66,108,111,99,107})
     })
+
+    -- 3. HDT on → start cooldown + drag
     if hitboxDraggingTech then
+        comboCooldownActive = true
+        lastComboTime       = tick()
+        pcall(function()
+            Library:Notify({ Title = "Cooldown", Description = "Block+HDT on 27s cooldown", Time = 3 })
+        end)
         task.spawn(function()
             local nearest = getNearestKillerModel()
             if nearest then
@@ -339,11 +405,13 @@ local function fireRemoteBlock()
     end
 end
 local function fireRemoteCharge()
+    if isHelpless() then return end
     testRemote:FireServer("UseActorAbility", {
         (function(b) local buf=buffer.create(#b); for i=1,#b do buffer.writeu8(buf,i-1,b[i]) end; return buf end)({3,5,0,0,0,83,108,97,115,104})
     })
 end
 local function fireRemoteClone()
+    if isHelpless() then return end
     testRemote:FireServer("UseActorAbility", {
         (function(b) local buf=buffer.create(#b); for i=1,#b do buffer.writeu8(buf,i-1,b[i]) end; return buf end)({3,5,0,0,0,67,108,111,110,101})
     })
@@ -473,6 +541,7 @@ end
 
 local function _attemptForSound(sound, idParam, mode)
     if not autoBlockAudioOn then return end
+    if isHelpless() then return end
     if not sound or not sound:IsA("Sound") or not sound.IsPlaying then return end
     local now = tick()
     local hook = soundHooks[sound]
@@ -677,7 +746,7 @@ local function setStamina()
 end
 
 -- ==========================================
--- CREATE WINDOW (Title [Beta], Footer "By viltrumite")
+-- CREATE WINDOW
 -- ==========================================
 local Window = Library:CreateWindow({
     Title            = "Slashsaken [Beta]",
@@ -687,10 +756,6 @@ local Window = Library:CreateWindow({
     AutoShow         = false,
 })
 
--- ==========================================
--- TABS IN REQUESTED ORDER
--- Esp → Stam → Auto Block → Facing Check → rest
--- ==========================================
 local Tabs = {
     Esp        = Window:AddTab("Esp",           "monitor"),
     Stam       = Window:AddTab("Stam",          "zap"),
@@ -837,7 +902,7 @@ FCRight:AddInput("FP_Window", {
 -- NOTICE TAB
 -- ==========================================
 Tabs.Notice:AddGroupbox({ Side="Left", Name="Info", IconName="info" }):AddLabel({
-    Text = "Slashsaken [Beta]\n\nBy viltrumite\n\n• Auto Block — giant circle around killer\n• Facing Check — forward circle only\n• HDT — walks you into killer (smooth, no teleport)\n• Flick Protection — skip block on fast flicks\n• Auto Punch — fires punch remote on block",
+    Text = "Slashsaken [Beta]\n\nBy viltrumite\n\n• Auto Block — giant circle around killer\n• Facing Check — forward circle only\n• HDT — walks you into killer (smooth, no teleport) with 27s cooldown\n• Helpless guard — block/HDT skip while helpless (cooldown not triggered)\n• Auto Punch — fires punch remote on block",
     DoesWrap = true,
 })
 
@@ -867,17 +932,51 @@ BDR:AddInput("BD_Stagger", { Text="Part Spawn Delay (0 = instant)", Default="0",
 BDR:AddInput("BD_Offset", { Text="Offset Infront Killer", Default="2.7", Numeric=true, ClearTextOnFocus=false, Callback=function(v) local n=tonumber(v); if n then antiFlickBaseOffset=math.max(0,n) end end })
 
 -- ==========================================
--- TECHS TAB
+-- TECHS TAB (HDT with duration slider + cooldown label)
 -- ==========================================
 local TechL = Tabs.Tech:AddGroupbox({ Side="Left", Name="HDT", IconName="cpu" })
 TechL:AddToggle("HDT_On", {
     Text = "HDT (smoothly walk into killer on block)",
     Default = false,
-    Tooltip = "Pulls you toward the nearest killer with BodyVelocity — no teleporting",
+    Tooltip = "Pulls you toward the nearest killer with BodyVelocity — no teleporting. 27s shared cooldown with block.",
     Callback = function(v) hitboxDraggingTech = v end,
+})
+TechL:AddSlider("HDT_Duration", {
+    Text     = "HDT Duration",
+    Default  = 1.5,
+    Min      = 0.1,
+    Max      = 5,
+    Rounding = 1,
+    Suffix   = "s",
+    Tooltip  = "How long the walk + look-at-killer lasts",
+    Callback = function(v) HDT_DURATION = tonumber(v) or 1.5 end,
 })
 TechL:AddInput("HDT_Speed", { Text="Walk speed (studs/s)", Default="8", Numeric=true, ClearTextOnFocus=false, Callback=function(v) Dspeed=tonumber(v) or 8 end })
 TechL:AddInput("HDT_Delay", { Text="Delay before walk (0 = instant)", Default="0", Numeric=true, ClearTextOnFocus=false, Callback=function(v) Ddelay=tonumber(v) or 0 end })
+TechL:AddLabel("HDT_CooldownLabel", {
+    Text = "Cooldown: Ready",
+    DoesWrap = false,
+})
+
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        if comboCooldownActive then
+            local remaining = COMBO_COOLDOWN - (tick() - lastComboTime)
+            if remaining > 0 then
+                pcall(function()
+                    Options.HDT_CooldownLabel:SetText(string.format("Cooldown: %.1fs", remaining))
+                end)
+            else
+                comboCooldownActive = false
+                pcall(function() Options.HDT_CooldownLabel:SetText("Cooldown: Ready") end)
+            end
+        else
+            pcall(function() Options.HDT_CooldownLabel:SetText("Cooldown: Ready") end)
+        end
+    end
+end)
+
 local TechR = Tabs.Tech:AddGroupbox({ Side="Right", Name="Exploits", IconName="terminal" })
 TechR:AddButton({ Text="Fake Lag Tech", Func=function()
     pcall(function()
@@ -956,7 +1055,7 @@ MiscR:AddButton({ Text="Clear Cache", Func=function()
 end })
 
 -- ==========================================
--- UI SETTINGS TAB
+-- UI SETTINGS
 -- ==========================================
 local UISettings = Tabs["UI Settings"]
 ThemeManager:SetLibrary(Library); SaveManager:SetLibrary(Library)
@@ -979,7 +1078,7 @@ Library:OnUnload(function() print("Slashsaken unloaded!") end)
 SaveManager:LoadAutoloadConfig()
 
 -- ==========================================
--- OPEN THE WINDOW 3 SECONDS AFTER START
+-- OPEN WINDOW 3 SECONDS AFTER START
 -- ==========================================
 task.delay(3, function()
     pcall(function() Library:Toggle() end)
@@ -992,7 +1091,6 @@ end)
 -- ==========================================
 -- ==========================================
 
--- Create facing visuals that already exist when script loads
 task.spawn(function()
     task.wait(1)
     local folder = getKillersFolder()
@@ -1026,10 +1124,11 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- AUTO BLOCK MAIN LOOP
+-- AUTO BLOCK MAIN LOOP (helpless check at top)
 -- ==========================================
 RunService.RenderStepped:Connect(function()
     if not autoBlockOn then return end
+    if isHelpless() then return end
     local myChar = lp.Character
     if not myChar then return end
     local myRoot = myChar:FindFirstChild("HumanoidRootPart")
@@ -1225,6 +1324,7 @@ end)
 -- ==========================================
 RunService.RenderStepped:Connect(function()
     if not hitboxDraggingTech then return end
+    if isHelpless() then return end
     if not cachedAnimator then refreshAnimator() end
     local animator = cachedAnimator
     if not animator then return end

@@ -1,5 +1,8 @@
 repeat task.wait() until game:IsLoaded()
 
+warn("[Slashsaken] Starting load at " .. tostring(tick()))
+local _src_started = tick()
+
 -- ==========================================
 -- DYNAMIC ID LOADER
 -- ==========================================
@@ -127,6 +130,30 @@ local Debris            = game:GetService("Debris")
 local testRemote        = ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Network"):WaitForChild("Network"):WaitForChild("RemoteEvent")
 
 -- ==========================================
+-- SPRINT MODULE (SAFE LOAD with fallback)
+-- ==========================================
+local sprintModule
+do
+    local ok, mod = pcall(function()
+        return require(ReplicatedStorage.Systems.Character.Game.Sprinting)
+    end)
+    if ok and type(mod) == "table" then
+        sprintModule = mod
+        print("[Slashsaken] Sprinting module loaded")
+    else
+        warn("[Slashsaken] Sprinting module missing — using fallback")
+        sprintModule = {
+            MaxStamina        = 100,
+            SprintSpeed       = 24,
+            StaminaGain       = 10,
+            StaminaDrain      = 1,
+            StaminaRegenDelay = 0.5,
+            Stamina           = 100,
+        }
+    end
+end
+
+-- ==========================================
 -- STATE
 -- ==========================================
 local wallCheckEnabled       = false
@@ -219,12 +246,12 @@ local SURVIVOR_SOUND_FIELDS   = { "Sounds","Sound","SFX","Sfx","SoundEffects","S
 local SURVIVOR_DAGGER_STAB_IDS = { ["100725497418533"]=true, ["89448354637442"]=true }
 
 -- SPOOFER STATE
-local ActiveTracks      = {}
-local ActiveSound       = nil
-local NameLoop          = false
-local DispLoop          = false
-local TargetName        = "???"
-local TargetDisp        = "???"
+local ActiveTracks       = {}
+local ActiveSound        = nil
+local NameLoop           = false
+local DispLoop           = false
+local TargetName         = "???"
+local TargetDisp         = "???"
 local currentEquipTarget = "Guest"
 local currentEquipSkin   = ""
 local emoteToPlay        = ""
@@ -232,13 +259,35 @@ local emoteList          = {}
 local killerList         = {}
 local survList           = {}
 
+-- ==========================================
+-- SPOOFER LISTS (SAFE POPULATION + FALLBACKS)
+-- ==========================================
 pcall(function()
-    for _, mod in ipairs(ReplicatedStorage.Assets.Emotes:GetDescendants()) do
-        if mod:IsA("ModuleScript") then table.insert(emoteList, mod.Name) end
+    local Assets = ReplicatedStorage:FindFirstChild("Assets")
+    if not Assets then
+        warn("[Slashsaken] ReplicatedStorage.Assets not found — spoofer lists will be empty")
+        return
     end
-    for _, k in ipairs(ReplicatedStorage.Assets.Killers:GetChildren()) do table.insert(killerList, k.Name) end
-    for _, s in ipairs(ReplicatedStorage.Assets.Survivors:GetChildren()) do table.insert(survList, s.Name) end
+    local emotes = Assets:FindFirstChild("Emotes")
+    if emotes then
+        for _, mod in ipairs(emotes:GetDescendants()) do
+            if mod:IsA("ModuleScript") then table.insert(emoteList, mod.Name) end
+        end
+    end
+    local killers = Assets:FindFirstChild("Killers")
+    if killers then
+        for _, k in ipairs(killers:GetChildren()) do table.insert(killerList, k.Name) end
+    end
+    local survivors = Assets:FindFirstChild("Survivors")
+    if survivors then
+        for _, s in ipairs(survivors:GetChildren()) do table.insert(survList, s.Name) end
+    end
 end)
+
+-- CRITICAL: Obsidian crashes on empty dropdown values
+if #emoteList  == 0 then emoteList  = {"None"}  end
+if #killerList == 0 then killerList = {"Guest"} end
+if #survList   == 0 then survList   = {"Guest"} end
 
 local function StopAllEmotes()
     for _, track in ipairs(ActiveTracks) do pcall(function() track:Stop() end) end
@@ -459,7 +508,11 @@ local function loadSurvivorAbilityIds(char)
     end
 end
 
-local function pushSurvivorEvent(n) _survivorEventRefCount = _survivorEventRefCount + 1; _survivorEventActive = true; _survivorCurrentAbility = n end
+local function pushSurvivorEvent(n)
+    _survivorEventRefCount = _survivorEventRefCount + 1
+    _survivorEventActive = true
+    _survivorCurrentAbility = n
+end
 local function popSurvivorEvent()
     _survivorEventRefCount = math.max(0, _survivorEventRefCount - 1)
     if _survivorEventRefCount == 0 then _survivorEventActive = false; _survivorCurrentAbility = nil end
@@ -872,8 +925,7 @@ local function espDoGenerators(on)
     end
 end
 
--- Stamina
-local sprintModule = require(ReplicatedStorage.Systems.Character.Game.Sprinting)
+-- Stamina (uses safe sprintModule)
 local maxStaminaValue = sprintModule.MaxStamina
 local sprintSpeedValue = sprintModule.SprintSpeed
 local staminaGainValue = sprintModule.StaminaGain
@@ -898,7 +950,7 @@ local function setStamina()
 end
 
 -- ==========================================
--- CREATE WINDOW + TABS (NEW ORDER)
+-- CREATE WINDOW + TABS
 -- ==========================================
 local Window = Library:CreateWindow({
     Title = "Slashsaken [Beta]",
@@ -924,13 +976,13 @@ local Tabs = {
     ["UI Settings"] = Window:AddTab("UI Settings", "settings"),
 }
 
--- NOTICE TAB
+-- NOTICE
 Tabs.Notice:AddGroupbox({Side="Left", Name="Info", IconName="info"}):AddLabel({
     Text = "Slashsaken [Beta]\n\nBy viltrumite\n\n• IDs loaded from Thragg888/Potential-man/ids.lua\n• Auto Block + M1 Lockout\n• Facing Check + Flick Protection\n• HDT (27s cooldown)\n• Killer Auto-Parry (JohnDoe/Slasher)\n• Survivor: Auto Aim + Auto Stab\n• Spoofer: Unlock All, Skins, Emotes, Stats, Identity",
     DoesWrap = true,
 })
 
--- ESP TAB
+-- ESP
 local VisL = Tabs.Esp:AddGroupbox({Side="Left", Name="Players", IconName="users"})
 VisL:AddToggle("ESP_Killer", {Text="Killer ESP", Default=false, Callback=function(v) espKillerActive=v end})
 VisL:AddToggle("ESP_Survivor", {Text="Survivors ESP", Default=false, Callback=function(v) espSurvivorActive=v end})
@@ -939,7 +991,7 @@ VisR:AddToggle("ESP_Medkit", {Text="Medkit ESP", Default=false, Callback=functio
 VisR:AddToggle("ESP_Bloxy", {Text="BloxyCola ESP", Default=false, Callback=function(v) espBloxyActive=v; if v then scanItems("BloxyCola") else bloxyHighlights=clearList(bloxyHighlights) end end})
 VisR:AddToggle("ESP_Generators", {Text="Generators ESP", Default=false, Callback=function(v) espGeneratorsActive=v; espDoGenerators(v) end})
 
--- STAM TAB
+-- STAM
 local StamL = Tabs.Stam:AddGroupbox({Side="Left", Name="Stamina", IconName="zap"})
 StamL:AddToggle("InfStamina", {Text="Infinite Stamina", Default=false, Callback=function(v)
     if v then setStamina() else infinityStaminaActive=false; if staminaThread then task.cancel(staminaThread); staminaThread=nil end end
@@ -1003,7 +1055,7 @@ local APR = Tabs.AutoPunch:AddGroupbox({Side="Right", Name="Aim Lock Modes", Ico
 APR:AddToggle("AP_CharLock", {Text="Character Lock", Default=true, Callback=function(v) aimPunchToggles["Character Lock"]=v end})
 APR:AddToggle("AP_CamLock", {Text="Camera Lock", Default=false, Callback=function(v) aimPunchToggles["Camera Lock"]=v end})
 
--- SURVIVOR TAB
+-- SURVIVOR
 local SAL = Tabs.Survivor:AddGroupbox({Side="Left", Name="Auto Aim", IconName="target"})
 SAL:AddToggle("SA_AimOn", {Text="Auto Aim", Default=false, Callback=function(v) survivorAimEnabled=v end})
 SAL:AddDropdown("SA_AimMode", {Values={"Camera","HRP","HRP+Camera"}, Default="Camera", Text="Aim Mode", Callback=function(v) survivorAimMode=v end})
@@ -1099,23 +1151,21 @@ KPBox:AddToggle("KP_Visual", {Text="Show Range Circle", Default=true, Callback=f
 KPBox:AddLabel("KP_Status", {Text="Status: Standby", DoesWrap=false})
 KPBox:AddLabel("KP_LastTrigger", {Text="Last trigger: None", DoesWrap=false})
 
--- ==========================================
--- SPOOFER TAB (NEW)
--- ==========================================
+-- SPOOFER
 local SpoofUnlockL = Tabs.Spoofer:AddGroupbox({Side="Left", Name="Unlock All", IconName="unlock"})
 SpoofUnlockL:AddButton({Text="Unlock All (killers + survivors + skins)", Func=function()
     local data = lp:WaitForChild("PlayerData"):WaitForChild("Purchased")
     local count = 0
     for _, name in ipairs(killerList) do
-        if not data.Killers:FindFirstChild(name) then Instance.new("StringValue", data.Killers).Name = name; count += 1 end
+        if not data.Killers:FindFirstChild(name) then Instance.new("StringValue", data.Killers).Name = name; count = count + 1 end
     end
     for _, name in ipairs(survList) do
-        if not data.Survivors:FindFirstChild(name) then Instance.new("StringValue", data.Survivors).Name = name; count += 1 end
+        if not data.Survivors:FindFirstChild(name) then Instance.new("StringValue", data.Survivors).Name = name; count = count + 1 end
     end
     local skinsRoot = ReplicatedStorage:WaitForChild("Assets"):WaitForChild("Skins")
     for _, skin in ipairs(skinsRoot:GetDescendants()) do
         if (skin:IsA("Folder") or skin:IsA("Model")) and not data.Skins:FindFirstChild(skin.Name) then
-            Instance.new("StringValue", data.Skins).Name = skin.Name; count += 1
+            Instance.new("StringValue", data.Skins).Name = skin.Name; count = count + 1
         end
     end
     Library:Notify({Title="Spoofer", Description="Unlocked "..count.." items!", Time=3})
@@ -1123,8 +1173,13 @@ end})
 
 local SpoofSkinL = Tabs.Spoofer:AddGroupbox({Side="Left", Name="Skin Equip", IconName="shirt"})
 SpoofSkinL:AddDropdown("SP_Char", {
-    Values = (function() local t = {} for _,v in ipairs(killerList) do table.insert(t,v) end for _,v in ipairs(survList) do table.insert(t,v) end return t end)(),
-    Default = "Guest",
+    Values = (function()
+        local t = {}
+        for _,v in ipairs(killerList) do table.insert(t,v) end
+        for _,v in ipairs(survList) do table.insert(t,v) end
+        return t
+    end)(),
+    Default = (killerList[1] or survList[1] or "Guest"),
     Text = "Character",
     Callback = function(v) currentEquipTarget = v end,
 })
@@ -1147,11 +1202,11 @@ SpoofEmoteR:AddButton({Text="Unlock Every Emote", Func=function()
     local pE = lp:WaitForChild("PlayerData"):WaitForChild("Purchased"):WaitForChild("Emotes")
     local count = 0
     for _, name in ipairs(emoteList) do
-        if not pE:FindFirstChild(name) then Instance.new("StringValue", pE).Name = name; count += 1 end
+        if not pE:FindFirstChild(name) then Instance.new("StringValue", pE).Name = name; count = count + 1 end
     end
     Library:Notify({Title="Spoofer", Description="Unlocked "..count.." emotes", Time=3})
 end})
-SpoofEmoteR:AddDropdown("SP_Emote", {Values=(#emoteList>0 and emoteList or {"None"}), Default=1, Text="Select Emote", Callback=function(v) emoteToPlay=v end})
+SpoofEmoteR:AddDropdown("SP_Emote", {Values=emoteList, Default=1, Text="Select Emote", Callback=function(v) emoteToPlay=v end})
 SpoofEmoteR:AddButton({Text="Play Selected (Space to stop)", Func=function()
     local name = emoteToPlay
     if not name or name == "" then return end
@@ -1746,3 +1801,5 @@ RunService.Heartbeat:Connect(function()
         end
     end
 end)
+
+warn("[Slashsaken] Script finished loading in " .. string.format("%.2fs", tick() - _src_started))
